@@ -1,0 +1,7 @@
+.env
+desktop.ini
+blacklist.txt
+whitelist.txt
+phishtank*
+phishing_army*
+local/
