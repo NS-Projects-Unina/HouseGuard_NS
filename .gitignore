@@ -17,3 +17,13 @@ __pycache__/
 .idea/
 win10.iso
 VNC-Viewer-7.15.1-Windows-64bit.exe
+
+.env
+desktop.ini
+blacklist.txt
+whitelist.txt
+phishtank*
+phishing_army*
+local/
+myenv/
+a5d85868d62f1fef46348b01205646dd78158dc6
