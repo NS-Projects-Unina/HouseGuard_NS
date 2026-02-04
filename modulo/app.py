@@ -52,38 +52,6 @@ class PhishingProxy:
             )
         
         return waitResponse
-    '''
-    def getListFromURL(self, list_url, listName):
-        """
-        Carica lista da URL fornito e la salva in locale
-        """
-
-        with requests.get(list_url, stream = True) as response:
-            response.raise_for_status()
-
-            with open(listFolder + f"/{listName}.txt", 'w', encoding='utf-8') as f:
-                for line in response.iter_lines(decode_unicode=True):
-                    if line:
-                        if not line.startswith('#'):
-                            f.write(line + '\n')
-    '''
-
-    # TODO uso periodico di funzione di cui sopra per aggiornare una lista
-
-    '''Implementato in StaticLinkModule
-    def isInList(self, listName, domain) -> bool:
-        """
-        Verifica se un dominio è presente in una lista locale
-        """
-        found = False
-        with open(listFolder + f"/{listName}.txt", "r") as listf:
-            lines = listf.readlines()
-            for row in lines:
-                if row.find(domain) != -1:
-                    found = True
-                    return found
-            return found
-    '''
             
     def load(self, loader):
         load_dotenv()
@@ -102,8 +70,6 @@ class PhishingProxy:
 
         self.phishing_army.load_data(True if not hasattr(self, 'lastUpdate') or (time.time() - self.lastUpdate) > 21600 else False)
         self.phish_tank.load_data(True if not hasattr(self, 'lastUpdate') or (time.time() - self.lastUpdate) > 3600 else False)
-
-        # checkBlacklist(blacklist_url)
     
     def addEntryInCache(self, link, action):
         self.cache.append('link: ') + link + (', action: ')+ action
@@ -193,39 +159,62 @@ class PhishingProxy:
     def request(self, flow: http.HTTPFlow) -> None:
         
         url = flow.request.pretty_url
+        domain = flow.request.pretty_host
 
-        # --- Check su whitelist: se l'url è presente, allora la richiesta può passare tranquillamente
-        if self.basic_control.checkWhitelist(url):
-            return
-
-        # --- Check su blacklist: se l'url è presente, allora la richiesta viene bloccata
-        if self.basic_control.checkBlacklist(url):
-            flow.response = blockResponse
-            return
-        # --- Check su cache: se l'url è presente, allora la richiesta viene bloccata
-        if url in self.cache:
-            if self.cache[url] == "block":
-                flow.response = blockResponse
-            return
-        
-        # --- Effettua analisi statica del link
-        score = self.staticAnalysis_score(url)
-        decision = self.staticAnalysis_detection(score)
-
-        if decision == PhishingValue.TRUSTED:
-            return
-        elif decision == PhishingValue.PHISING:
-            flow.response = blockResponse
-            return
-
+        # --- Si verifica se è in atto una analisi dinamica per l'url corrente
         if url in processing_analysis:
             waitResponse = buildWaitResponse(url)
             flow.response = waitResponse
             return
-
-        domain = flow.request.host
         
-        # Si arriva qui se l'URL è solo sospetto oppure se c'é un errore
+        # --- Check su cache:
+        #     Se l'URL è presente, si verifica se
+        #     la richiesta va bloccata o lasciata passare
+        if url in self.cache:
+            if self.cache[url] == "block":
+                flow.response = blockResponse
+            return
+        #     Se il dominio è presente ed è non fidato, si blocca
+        if domain in self.cache and self.cache[domain] == "block":
+            flow.response = blockResponse
+            return
+    
+        # --- Check su whitelist: se l'url o il dominio è presente,
+        #     allora la richiesta può passare tranquillamente
+        if self.basic_control.checkWhitelist(domain) or self.basic_control.checkWhitelist(url):
+            return
+
+        # --- Check su blacklist: se l'url o il dominio è presente, allora la richiesta viene bloccata
+        if self.basic_control.checkBlacklist(domain) or self.basic_control.checkWhitelist(url):
+            flow.response = blockResponse
+            return
+        
+        if domain not in self.cache:
+            # --- Effettua analisi statica del dominio
+            score = self.staticAnalysis_score(domain)
+            decision = self.staticAnalysis_detection(score)
+
+            #    Se il dominio è non fidato si blocca, altrimenti si continua
+            if decision == PhishingValue.TRUSTED:
+                self.cache[domain] = "pass"
+            elif decision == PhishingValue.PHISHING:
+                flow.response = blockResponse
+                self.cache[domain] = "block"
+                return
+        
+        # --- Effettua analisi statica dell'URL
+        score = self.staticAnalysis_score(url)
+        decision = self.staticAnalysis_detection(score)
+
+        if decision == PhishingValue.TRUSTED:
+            self.cache[url] = "pass"
+            return
+        elif decision == PhishingValue.PHISHING:
+            flow.response = blockResponse
+            self.cache[url] = "block"
+            return
+        
+        # Si arriva qui se l'URL è sospetto
         flow.response = buildWaitResponse(url)
         processing_analysis.add(url)
         t = threading.Thread(target=dynamic_analysis, args=(url,domain))
@@ -234,13 +223,12 @@ class PhishingProxy:
     # --- Analisi dinamica con CAPE
     def dynamic_analysis(self, url, domain):
 
+        decision = "pass"
+
         # TODO ... uso API di cape per l'analisi ...
 
         # Si salva la decisione di CAPE nella cache
         self.cache[url] = decision
-        # Si attua la decisione di CAPE
-        if decision == "block":
-            flow.response = blockResponse
         
         processing_analysis.remove(url)
         return
