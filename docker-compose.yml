@@ -1,0 +1,102 @@
+services:
+  # ==========================================
+  # 1. MODULO ANTI-PHISHING
+  # ==========================================
+  controller:
+    build: ./modulo
+    container_name: antiphishing_mitmproxy
+    # Il comando CMD è già nel Dockerfile
+    # command: ["mitmdump", "-s", "app.py"] 
+    ports:
+      - "8080:8080"  # Porta del Proxy (Mitmproxy default)
+      - "8081:8081"  # Interfaccia web di Mitmproxy se usi 'mitmweb' invece di 'mitmdump'
+    depends_on:
+      - redis_db
+    environment:
+      # Passiamo la chiave API direttamente o tramite file .env
+      - VIRUSTOTAL_API_KEY=a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0 #generato casualmente per testare il compose
+      #- VIRUSTOTAL_API_KEY=${VIRUSTOTAL_API_KEY} 
+      - REDIS_HOST=redis_db
+      - REDIS_DB_CACHE=0      # Cache Analisi
+      - REDIS_DB_BLACKLIST=1  # Blacklist
+      - REDIS_DB_WHITELIST=2  # Whitelist
+      - CAPE_API_URL=http://host.docker.internal:8000/api
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      #Monta la cartella locale per sviluppare senza ricostruire ogni volta
+      - ./modulo:/home/mitmproxy
+    networks:
+      - backend_net
+
+  # ==========================================
+  # 2. UPDATER
+  # ==========================================
+  updater:
+    build: ./modulo
+    container_name: antiphishing_updater
+    entrypoint: ["python", "updater.py"] 
+    depends_on:
+      - redis_db
+    environment:
+      - REDIS_HOST=redis_db
+      # L'updater deve sapere dove scrivere le liste
+      - REDIS_DB_BLACKLIST=1
+      - REDIS_DB_WHITELIST=2
+    volumes:
+      # Serve montare la cartella per leggere whitelist.txt se è locale
+      - ./modulo:/home/mitmproxy
+    networks:
+      - backend_net
+
+  # ==========================================
+  # 3. REDIS
+  # ==========================================
+  # DB 0: Cache Analisi (Volatile con TTL)
+  # DB 1: Blacklist (Persistente - PhishArmy)
+  # DB 2: Whitelist (Persistente - Domini sicuri)
+  redis_db:
+    image: redis:alpine
+    container_name: antiphishing_redis
+    # Comando di avvio  per garantire il salvataggio su disco
+    # --save 60 1: Salva su disco (snapshot) se cambia almeno 1 chiave ogni 60 secondi
+    # --loglevel warning: Riduce il rumore nei log
+    command: redis-server --save 60 1 --loglevel warning
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - backend_net
+
+  # ==========================================
+  # 4. POSTGRESQL
+  # ==========================================
+  cape-db:
+    image: postgres:14
+    container_name: cape_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: cape
+      POSTGRES_PASSWORD: cape
+      POSTGRES_DB: cape
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cape -d cape"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - backend_net
+
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  backend_net:
+    driver: bridge

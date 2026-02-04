@@ -1,0 +1,19 @@
+# Ignora i file segreti
+.env
+
+# Ignora le cartelle dei database (non vogliamo caricare i dati reali su Git!)
+postgres_data/
+redis_data/
+
+# Ignora la cartella di CAPE (è un altro repo, non va caricato qui)
+cape_source/
+
+# Ignora file temporanei Python
+__pycache__/
+*.pyc
+
+# Ignora cartelle IDE (opzionale)
+.vscode/
+.idea/
+win10.iso
+VNC-Viewer-7.15.1-Windows-64bit.exe
