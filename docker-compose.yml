@@ -20,7 +20,8 @@ services:
       - REDIS_DB_CACHE=0      # Cache Analisi
       - REDIS_DB_BLACKLIST=1  # Blacklist
       - REDIS_DB_WHITELIST=2  # Whitelist
-      - CAPE_API_URL=http://host.docker.internal:8000/api
+      - CAPE_API_URL=http://172.17.0.1:8000/api/
+      - CAPE_API_TOKEN=908469b20729ba9e870db4a4dd36264abfb30ef6
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
