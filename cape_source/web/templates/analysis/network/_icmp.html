@@ -1,0 +1,29 @@
+<div class="card bg-dark border-secondary">
+    <div class="card-header border-secondary">
+        <h5 class="mb-0 text-white"><i class="fas fa-stream me-2 text-info"></i>ICMP Traffic</h5>
+    </div>
+{% if network.icmp %}
+<div class="card-body">
+<table class="table table-dark table-striped table-bordered" style="table-layout: fixed;">
+    <tr>
+        <th>Source</th>
+        <th>Destination</th>
+        <th>ICMP Type</th>
+        <th>Data</th>
+    </tr>
+    {% for packet in network.icmp %}
+    <tr>
+        <td style="word-wrap: break-word;">{{packet.src}}</td>
+        <td style="word-wrap: break-word;">{{packet.dst}}</td>
+        <td style="word-wrap: break-word;">{{packet.type}}</td>
+        <td style="word-wrap: break-word;">{{packet.data}}</td>
+    </tr>
+    {% endfor %}
+</table>
+</div>
+{% else %}
+<div class="card-body">
+<div class="alert alert-info">No ICMP traffic performed.</div>
+</div>
+{% endif %}
+</div>

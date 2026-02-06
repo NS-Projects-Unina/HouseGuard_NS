@@ -1,0 +1,27 @@
+<div class="card bg-dark border-secondary">
+    <div class="card-header border-secondary">
+        <h5 class="mb-0 text-white"><i class="fas fa-comments me-2 text-info"></i>IRC Traffic</h5>
+    </div>
+{% if network.irc %}
+<div class="card-body">
+<table class="table table-dark table-striped table-bordered" style="table-layout: fixed;">
+    <tr>
+        <th>Command</th>
+        <th>Params</th>
+        <th>Type</th>
+    </tr>
+    {% for irc in network.irc %}
+    <tr>
+        <td style="word-wrap: break-word;">{{irc.command}}</td>
+        <td style="word-wrap: break-word;">{{irc.params}}</td>
+        <td style="word-wrap: break-word;">{{irc.type}}</td>
+    </tr>
+    {% endfor %}
+</table>
+</div>
+{% else %}
+<div class="card-body">
+<div class="alert alert-info">No IRC requests performed.</div>
+</div>
+{% endif %}
+</div>
