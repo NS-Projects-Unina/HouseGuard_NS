@@ -199,8 +199,6 @@ class PhishingProxy:
         return decision
 
     def process_request(self, url, domain, deep_analyze = True) -> str:
-
-        self.logger.info(f"[Proxy] Ricevuta richiesta con URL {url} e dominio {domain}")
         
         # --- Check su cache:
         #     Se l'URL è presente, si verifica se
@@ -287,6 +285,9 @@ class PhishingProxy:
         url = flow.request.pretty_url
         domain = flow.request.pretty_host
 
+        self.logger.info(f"[Proxy] Ricevuta richiesta con URL {url} e dominio {domain}")
+
+        # --- Verifica il tipo di contenuto nella richiesta
         deep_analyze = False
         request_content_type = flow.request.headers.get("Content-Type", None)
         if request_content_type:
@@ -294,7 +295,7 @@ class PhishingProxy:
                 if content_type in request_content_type:
                     deep_analyze = True
         
-        self.logger.info(f"content type: {request_content_type}, analyze={deep_analyze}")
+        self.logger.info(f"[Proxy] Content type: {request_content_type}")
 
         decision = self.process_request(url, domain, deep_analyze=deep_analyze)
 
