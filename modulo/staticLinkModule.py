@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 import ssl
 import socket
 
+from updater import DAO
 
 
 # Funzioni di utilità condivise 
@@ -27,7 +28,7 @@ def get_clean_domain(url):
 class BasicControl:
 
 
-    def checkList(link, type):
+    def checkList(self, link, type):
         with open(f"{type}.txt", 'r') as f:
             list = [line.strip() for line in f]
         if link in list:
@@ -99,7 +100,9 @@ class PhishTankControl:
         self.PT_URL = 'http://data.phishtank.com/data/online-valid.json.gz'
         self.GZ_FILE = os.path.join(db_folder, 'phishtank.json.gz')
         self.JSON_FILE = os.path.join(db_folder, 'phishtank.json')
-        self.database = {}
+
+        self.database = DAO("REDIS_DB_BLACKLIST")
+
         # Header anti-blocco 403
         self.headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
@@ -138,22 +141,25 @@ class PhishTankControl:
             with open(self.JSON_FILE, 'r', encoding='utf-8') as f:
                 raw_data = json.load(f)
             
-            
-            self.database = {
+            database = {
                 entry['url']: entry['target']
                 for entry in raw_data
                 if entry.get('verified') == 'yes' 
             }
-            print(f"🔹 [PhishTank] {len(self.database)} URL caricati.")
+
+            self.database.load_data(database)
+
+            print(f"🔹 [PhishTank] {len(database)} URL caricati.")
         except Exception as e:
             print(f"❌ [PhishTank] Errore lettura JSON: {e}")
 
     def check_url(self, url):
-        if not self.database:
+        if self.database.is_empty():
             print("⚠️ [PhishTank] DB vuoto. Esegui load_data() prima.")
             return None
+        conn = self.database.get_db_connection()
 
-        target = self.database.get(url)
+        target = conn.get(url)
         if target:
             return {
                 'detected': True,
@@ -168,7 +174,8 @@ class PhishingArmyControl:
     def __init__(self, db_folder='.'):
         self.PA_URL = 'https://phishing.army/download/phishing_army_blocklist_extended.txt'
         self.DB_FILE = os.path.join(db_folder, 'phishing_army.txt')
-        self.blocked_domains = set()
+
+        self.blocked_domains = DAO("REDIS_DB_BLACKLIST")
 
     def _download_db(self):
         print("🔄 [Phishing Army] Scaricamento aggiornamenti...")
@@ -188,6 +195,8 @@ class PhishingArmyControl:
             return False
 
     def load_data(self, force_update=False):
+        blocked_domains = {}
+
         if force_update or not os.path.exists(self.DB_FILE):
             success = self._download_db()
             if not success and not os.path.exists(self.DB_FILE):
@@ -196,21 +205,29 @@ class PhishingArmyControl:
         print("📂 [Phishing Army] Caricamento domini in memoria...")
         try:
             with open(self.DB_FILE, 'r', encoding='utf-8') as f:
-                self.blocked_domains = {
-                    line.strip() 
+                blocked_domains = {
+                    line.strip() : "block"
                     for line in f 
                     if line.strip() and not line.startswith('#')
                 }
-            print(f"🔹 [Phishing Army] {len(self.blocked_domains)} domini caricati.")
+
+            self.blocked_domains.load_data(blocked_domains)
+
+            print(f"🔹 [Phishing Army] {len(blocked_domains)} domini caricati.")
         except Exception as e:
             print(f"❌ [Phishing Army] Errore lettura file: {e}")
 
     def check_url(self, url):
-        if not self.blocked_domains:
+        if self.blocked_domains.is_empty():
+            print("⚠️ [Phishing Army] DB vuoto. Esegui load_data() prima.")
             return None
+
+        conn = self.blocked_domains.get_db_connection()
         
         target_domain = get_clean_domain(url)
-        if target_domain in self.blocked_domains:
+        print(f"[Phishing Army] Analisi di {target_domain} in corso...")
+        if conn.get(target_domain):
+            conn.close()
             return {
                 'detected': True,
                 'source': 'Phishing Army',
