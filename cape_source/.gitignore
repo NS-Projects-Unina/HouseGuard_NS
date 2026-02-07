@@ -10,13 +10,10 @@ __pycache__/
 .local/
 .env/
 .vscode
-env/
-tests/test_objects/
-log/
-storage/
-conf/*.conf
+#env/
+#tests/test_objects/
+#log/
 
-web/web/secret_key.py
 tests/test_bson.bson.compressed
 *~
 
