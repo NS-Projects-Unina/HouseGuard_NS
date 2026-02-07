@@ -114,7 +114,7 @@ class PhishingProxy:
 
         self.logger.log(ALERT, "Updaters avviati")
 
-    def staticAnalysis_score(self, url, use_virus_total = True) -> float:
+    def staticAnalysis_score(self, url, is_domain = False, use_virus_total = True) -> float:
         # Sistema a punteggio: se viene superata una certa soglia, allora il link viene considerato sospetto
         score = 0
         #TODO Analisi di scrittura del link (ancora da implementare)
@@ -142,14 +142,15 @@ class PhishingProxy:
             score += 100
 
         # Analisi database scaricabili(PhishingArmy, PhishTank implementati al momento)
-        # 100 punti per ogni presenza rilevata
+        # Blocco istantaneo (score inf) per ogni presenza rilevata
 
-        check_phishing_army = self.phishing_army.check_url(url)
-        print("   🎏  Controllo Phishing Army in corso...")
-        if check_phishing_army:
-            print(f"   🛑 RILEVATO DA PHISHING ARMY!")
-            print(f"      Dominio bloccato: {check_phishing_army['domain_matched']}")
-            return float('inf')
+        if is_domain:
+            check_phishing_army = self.phishing_army.check_url(url)
+            print("   🎏  Controllo Phishing Army in corso...")
+            if check_phishing_army:
+                print(f"   🛑 RILEVATO DA PHISHING ARMY!")
+                print(f"      Dominio bloccato: {check_phishing_army['domain_matched']}")
+                return float('inf')
 
         print("   🐟  Controllo PhishTank in corso...")
         check_phish_tank = self.phish_tank.check_url(url)
@@ -198,7 +199,7 @@ class PhishingProxy:
         
         return decision
 
-    def process_request(self, url, domain, deep_analyze = True) -> str:
+    def process_request(self, url, domain, is_root_path = False, deep_analyze = False) -> str:
         
         # --- Check su cache:
         #     Se l'URL è presente, si verifica se
@@ -240,7 +241,7 @@ class PhishingProxy:
         decision = self.cache.get(domain)
         if not decision:
             # --- Effettua analisi statica del dominio
-            score = self.staticAnalysis_score(domain, use_virus_total = deep_analyze)
+            score = self.staticAnalysis_score(domain, is_domain = True, use_virus_total = deep_analyze)
             decision = self.staticAnalysis_detection(score)
 
             self.logger.log(ALERT, f"[Proxy] Analisi statica del dominio completata. Score {score}, decisione: {decision}")
@@ -256,7 +257,7 @@ class PhishingProxy:
                 return "block"
         
         # --- Effettua analisi statica dell'URL
-        score = self.staticAnalysis_score(url, use_virus_total = deep_analyze)
+        score = self.staticAnalysis_score(url, is_domain = False, use_virus_total = deep_analyze and not is_root_path)
         decision = self.staticAnalysis_detection(score)
 
         self.logger.log(ALERT, f"[Proxy] Analisi statica dell'URL completata. Score {score}, decisione: {decision}")
@@ -284,20 +285,31 @@ class PhishingProxy:
 
         url = flow.request.pretty_url
         domain = flow.request.pretty_host
+        path = flow.request.path
 
         self.logger.info(f"[Proxy] Ricevuta richiesta con URL {url} e dominio {domain}")
 
-        # --- Verifica il tipo di contenuto nella richiesta
+        # --- Verifica il tipo di contenuto richiesto
         deep_analyze = False
-        request_content_type = flow.request.headers.get("Content-Type", None)
+        request_content_type = flow.request.headers.get("Accept", None)
         if request_content_type:
             for content_type in self.analyzable_contents:
                 if content_type in request_content_type:
                     deep_analyze = True
         
-        self.logger.info(f"[Proxy] Content type: {request_content_type}")
+        # --- Verifica se il path è la radice del dominio
+        isRootPath = False
+        actualPath = ""
+        if path:
+            actualPath = path.split("?")[0]
+            if actualPath in ["/", "/index.html", "/index.php"]:
+                isRootPath = True
 
-        decision = self.process_request(url, domain, deep_analyze=deep_analyze)
+        self.logger.info(f"[Proxy] is root path: {isRootPath}, actual path : {actualPath}")
+        
+        self.logger.info(f"[Proxy] Content type richiesto: {request_content_type}")
+
+        decision = self.process_request(url, domain, is_root_path = isRootPath, deep_analyze=deep_analyze)
 
         if decision == "processing":
             flow.response = self.buildWaitResponse(url)
