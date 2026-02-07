@@ -1,8 +1,7 @@
 <domainsnapshot>
   <name>Snap1</name>
-  <description>Ready</description>
   <state>running</state>
-  <creationTime>1770244584</creationTime>
+  <creationTime>1770480404</creationTime>
   <memory snapshot='internal'/>
   <disks>
     <disk name='sda' snapshot='internal'/>
@@ -60,8 +59,6 @@
       </disk>
       <disk type='file' device='cdrom'>
         <driver name='qemu' type='raw'/>
-        <source file='/var/lib/libvirt/boot/win10.iso'/>
-        <backingStore/>
         <target dev='sdb' bus='sata'/>
         <readonly/>
         <address type='drive' controller='0' bus='0' target='0' unit='1'/>
@@ -232,7 +229,6 @@
       </disk>
       <disk type='file' device='cdrom'>
         <driver name='qemu' type='raw'/>
-        <source file='/var/lib/libvirt/boot/win10.iso'/>
         <target dev='sdb' bus='sata'/>
         <readonly/>
         <address type='drive' controller='0' bus='0' target='0' unit='1'/>
