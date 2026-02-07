@@ -29,6 +29,8 @@ services:
     volumes:
       #Monta la cartella locale per sviluppare senza ricostruire ogni volta
       - ./modulo:/home/mitmproxy
+      # Volume per persistere i certificati (es. CA) e renderli accessibili
+      - ./modulo/mitmproxy_certs:/home/mitmproxy/.mitmproxy
     networks:
       - backend_net
 
