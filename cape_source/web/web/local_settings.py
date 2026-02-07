@@ -56,14 +56,14 @@ SOCIALACCOUNT_PROVIDERS = {
     },
 }
 
-# --- Aggiunta per forzare PostgreSQL ---
+# --- Aggiunta per forzare PostgreSQL 
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
         'NAME': 'cape',
         'USER': 'cape',
         'PASSWORD': 'cape',
-        'HOST': '127.0.0.1',
+        'HOST': 'host.docker.internal',  
         'PORT': '5432',
     }
 }
