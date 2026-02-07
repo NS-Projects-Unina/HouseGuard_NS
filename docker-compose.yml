@@ -14,7 +14,7 @@ services:
       - redis_db
     environment:
       # Passiamo la chiave API direttamente o tramite file .env
-      - VIRUSTOTAL_API_KEY= 533da045358838ba9fb964cdd838d5edb5755f42a2eb6ed1d5b0de960ff3d1de
+      - VIRUSTOTAL_API_KEY=533da045358838ba9fb964cdd838d5edb5755f42a2eb6ed1d5b0de960ff3d1de
       #- VIRUSTOTAL_API_KEY=${VIRUSTOTAL_API_KEY} 
       - REDIS_HOST=redis_db
       - REDIS_DB_CACHE=0      # Cache Analisi
@@ -22,33 +22,37 @@ services:
       - REDIS_DB_WHITELIST=2  # Whitelist
       - CAPE_API_URL=http://172.17.0.1:8000/api/
       - CAPE_API_TOKEN=908469b20729ba9e870db4a4dd36264abfb30ef6
+    tty: true
+    stdin_open: true
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
       #Monta la cartella locale per sviluppare senza ricostruire ogni volta
       - ./modulo:/home/mitmproxy
+      # Volume per persistere i certificati (es. CA) e renderli accessibili
+      - ./modulo/mitmproxy_certs:/home/mitmproxy/.mitmproxy
     networks:
       - backend_net
 
-  # ==========================================
-  # 2. UPDATER
-  # ==========================================
-  updater:
-    build: ./modulo
-    container_name: antiphishing_updater
-    entrypoint: ["python", "updater.py"] 
-    depends_on:
-      - redis_db
-    environment:
-      - REDIS_HOST=redis_db
-      # L'updater deve sapere dove scrivere le liste
-      - REDIS_DB_BLACKLIST=1
-      - REDIS_DB_WHITELIST=2
-    volumes:
-      # Serve montare la cartella per leggere whitelist.txt se è locale
-      - ./modulo:/home/mitmproxy
-    networks:
-      - backend_net
+  # # ==========================================
+  # # 2. UPDATER
+  # # ==========================================
+  # updater:
+  #   build: ./modulo
+  #   container_name: antiphishing_updater
+  #   entrypoint: ["python", "updater.py"] 
+  #   depends_on:
+  #     - redis_db
+  #   environment:
+  #     - REDIS_HOST=redis_db
+  #     # L'updater deve sapere dove scrivere le liste
+  #     - REDIS_DB_BLACKLIST=1
+  #     - REDIS_DB_WHITELIST=2
+  #   volumes:
+  #     # Serve montare la cartella per leggere whitelist.txt se è locale
+  #     - ./modulo:/home/mitmproxy
+  #   networks:
+  #     - backend_net
 
   # ==========================================
   # 3. REDIS
