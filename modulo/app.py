@@ -1,7 +1,7 @@
 from mitmproxy import http
 import requests
 import threading
-from staticLinkModule import BasicControl,  CertificateControl, VirusTotalControl, PhishingArmyControl, PhishTankControl
+from staticLinkModule import BasicControl,  CertificateControl, VirusTotalControl, PhishingArmyControl, PhishTankControl, CapeControl
 from updater import DAO, UpdaterThread
 import os
 import sys
@@ -87,6 +87,11 @@ class PhishingProxy:
         # formato del tipo {"posteitaliane.it : "pass", "postltaliane.it" : "block"}
         self.cache = DAO("REDIS_DB_CACHE").get_db_connection()
         self.cache.flushdb()
+
+        CAPE_TOKEN = os.getenv('CAPE_API_KEY')
+        CAPE_API_URL = "http://127.0.0.1:8000"
+        
+        self.cape_engine = CapeControl(CAPE_API_URL, CAPE_TOKEN)
 
         self.analyzable_contents = ["text/html", "text/plain"]
 
@@ -323,14 +328,66 @@ class PhishingProxy:
         
     # --- Analisi dinamica con CAPE
     def dynamic_analysis(self, url, domain, cache):
-
         decision = "pass"
+        '''
+            time.sleep(5)
+            print("   📦 Invio a CAPE Sandbox Locale...")
+        
+            # 1. Invio
+            task_id = cape_engine.submit_url(url)
+            
+            if task_id:
+                print(f"   ✅ URL inviato. Task ID: {task_id}")
+                
+                # 2. Attesa attiva del risultato
+                report = cape_engine.wait_for_report(task_id)
+                
+                if report:
+                    # 3. Analisi del Report JSON
+                    # CAPE assegna un 'malscore' da 0.0 a 10.0
+                    if report.get("error"):
+                        print(f"   ⚠️ Impossibile determinare malignità (Errore CAPE: {report.get('reason')})")
+                        print("   ➡️ Considero l'URL sospetto per precauzione (o lo ignoro, a tua scelta).")
+                    else:
+                        
+                        malscore = report.get('malscore', 0)
+                        
+                        print(f"\n   📊 RISULTATO ANALISI DINAMICA:")
+                        print(f"      Punteggio Malignità: {malscore}/10.0")
+                        
+                        # Estrazione firme (comportamenti sospetti)
+                        signatures = report.get('signatures', [])
+                        if signatures:
+                            print("      🚩 Comportamenti sospetti rilevati:")
+                            for sig in signatures:
+                                # Stampa nome e severità della firma
+                                sig_name = sig.get('name')
+                                sig_sev = sig.get('severity', 1)
+                                print(f"         - [{sig_sev}/5] {sig_name}")
+                                decision = "block"
+                        else:
+                            print("      ✅ Nessun comportamento sospetto rilevato.")
+                            decision = "pass"
 
-        time.sleep(5)
+                    # Logica di blocco basata sul punteggio CAPE
+                    if malscore >= 5.0:
+                        print(f"   🛑 BLOCCO: Punteggio CAPE troppo alto!")
+                        decision = "block"
+                    else:
+                        print(f"   ✅ URL considerato sicuro da CAPE.")
+                        decision = "pass"
 
-        # TODO ... uso API di cape per l'analisi ...
+                else:
+                    print("   ⚠️ Impossibile recuperare il report (Timeout o Errore).")
 
-        # Si salva la decisione di CAPE nella cache
+                    
+            else:
+                print("   ❌ Errore nell'invio a CAPE.")
+
+            print("-" * 40)
+            '''
+
+            # Si salva la decisione di CAPE nella cache
         self.logger.log(ALERT, f"[Proxy] Analisi dinamica completata. Score {score}, decisione: {decision}")
         cache.set(url, decision)
         return

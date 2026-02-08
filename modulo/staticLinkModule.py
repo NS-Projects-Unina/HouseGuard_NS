@@ -8,6 +8,7 @@ import os
 from urllib.parse import urlparse
 import ssl
 import socket
+import re
 
 from updater import DAO
 
@@ -274,7 +275,131 @@ class VirusTotalControl:
             print(f"❌ [VirusTotal] Errore: {e}")
         return None
 
+class CapeControl:
+    def __init__(self, api_url, api_token=None):
+        self.api_url = api_url.rstrip('/')
+        self.headers = {}
+        if api_token:
+            self.headers['Authorization'] = f"Token {api_token}"
 
+    def submit_url(self, url):
+            """Invia URL e ritorna il Task ID gestendo la lista 'task_ids'"""
+            # Nota: Ho aggiunto 'timeout' per evitare blocchi infiniti se la rete cade
+            endpoint = f"{self.api_url}/apiv2/tasks/create/url/"
+            data = {'url': url, 'tags': 'win10'} 
+            
+            try:
+                # Aggiungiamo un timeout di 10 secondi alla richiesta di invio
+                response = requests.post(endpoint, data=data, headers=self.headers, timeout=10)
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    
+                    # --- LOGICA DI ESTRAZIONE AGGIORNATA ---
+                    
+                    # Caso 1: La struttura che hai ricevuto tu (data -> task_ids -> [24])
+                    data_obj = result.get('data')
+                    if isinstance(data_obj, dict):
+                        task_ids = data_obj.get('task_ids')
+                        if isinstance(task_ids, list) and len(task_ids) > 0:
+                            return task_ids[0] # Prende il primo ID (es. 24)
+                    
+                    # Caso 2: Fallback (se cambia versione o formato)
+                    task_id = result.get('task_id')
+                    if task_id: return task_id
+
+                    # Se arriviamo qui, stampiamo il debug per capire cosa manca
+                    print(f"      ⚠️ Risposta CAPE non riconosciuta: {result}")
+                    return None
+                    
+                else:
+                    print(f"      ❌ Errore HTTP CAPE: {response.status_code}")
+                    return None
+
+            except Exception as e:
+                print(f"      ❌ Eccezione connessione: {e}")
+                return None
+
+    def _get_status(self, task_id):
+        """Controlla lo stato attuale del task"""
+        endpoint = f"{self.api_url}/apiv2/tasks/view/{task_id}/"
+        try:
+            response = requests.get(endpoint, headers=self.headers)
+            if response.status_code == 200:
+                data = response.json()
+                # Lo stato è solitamente in data['status']
+                return data.get('data', {}).get('status')
+        except:
+            pass
+        return None
+
+    def wait_for_report(self, task_id, timeout=300):
+            """Attende che l'analisi sia completa e scarica il report."""
+            print(f"      ⏳ In attesa del report CAPE (Max {timeout}s)...")
+            start_time = time.time()
+            
+            while (time.time() - start_time) < timeout:
+                try:
+                    # Chiediamo lo stato all'API
+                    status_resp = requests.get(f"{self.api_url}/apiv2/tasks/view/{task_id}/", headers=self.headers)
+                    if status_resp.status_code == 200:
+                        data = status_resp.json().get("data", {})
+                        status = data.get("status")
+                        
+                        # Feedback visivo (sovrascrive la riga precedente per pulizia)
+                        print(f"      ... stato attuale: {status}", end="\r")
+                        
+                        # CASO 1: Successo
+                        if status == "reported":
+                            print("\n      📝 Analisi completata! Scaricamento report...")
+                            return self._fetch_report(task_id)
+                        
+                        # CASO 2: Fallimenti noti
+                        elif status in ["failed_analysis", "failed_processing", "failed_reporting"]:
+                            print(f"\n      ❌ Errore Critico CAPE: Stato '{status}'.")
+                            # Possiamo restituire un oggetto "finto" per non rompere il flusso
+                            return {"malscore": 0.0, "error": True, "reason": status}
+                        
+                        # CASO 3: Ancora in corso
+                        elif status in ["pending", "running", "completed", "starting"]:
+                            time.sleep(5)
+                            continue
+                            
+                        else:
+                            print(f"\n      ⚠️ Stato sconosciuto: {status}")
+                            
+                except Exception as e:
+                    print(f"\n      ❌ Errore connessione polling: {e}")
+                    time.sleep(5)
+                    
+                time.sleep(2)
+                
+            print("\n      ⏰ Timeout attesa report scaduto.")
+            return None
+
+    def _fetch_report(self, task_id):
+            """
+            Scarica il report JSON finale usando l'API.
+            """
+            # Endpoint per scaricare il report in formato JSON
+            endpoint = f"{self.api_url}/apiv2/tasks/get/report/{task_id}/json/"
+            
+            try:
+                print(f"      📥 Richiesta report a: {endpoint}")
+                response = requests.get(endpoint, headers=self.headers)
+                
+                if response.status_code == 200:
+                    print("      ✅ Report scaricato con successo!")
+                    return response.json()
+                elif response.status_code == 404:
+                    print("      ⚠️ Report non trovato (404). Forse il Guardian non ha ancora finito?")
+                    return None
+                else:
+                    print(f"      ❌ Errore API Report ({response.status_code}): {response.text[:100]}")
+                    return None
+            except Exception as e:
+                print(f"      ❌ Errore connessione durante download report: {e}")
+            return None
 
 
 
