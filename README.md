@@ -21,3 +21,7 @@ avviare cuckoo.py in un terminale:
 cd ~/HouseGuard_NS/cape_source
 source venv/bin/activate
 python3 cuckoo.py -d
+Avviare guardian.sh, questo permette di generare i report una volta che CAPE finisce l'analisi
+cd ~/HouseGuard_NS/cape_source
+source venv/bin/activate
+./guardian.sh
