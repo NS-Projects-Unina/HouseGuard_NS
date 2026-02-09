@@ -1,14 +1,20 @@
-# Usa l'immagine ufficiale di Mitmproxy
-FROM mitmproxy/mitmproxy
+# Usa un'immagine base leggera di Python
+FROM python:3.9-slim 
 
 WORKDIR /home/mitmproxy
 
-# Installa le dipendenze Python aggiuntive
+# --- AGGIUNTA FONDAMENTALE ---
+# Aggiorniamo i certificati di root del sistema
+RUN apt-get update && apt-get install -y ca-certificates && update-ca-certificates
+# -----------------------------
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copia TUTTI i file del modulo (app.py, staticLinkModule.py, liste, ecc.)
 COPY . .
 
-# Comando di avvio: lancia mitmdump con lo script
-CMD ["mitmdump", "-s", "app.py", "--set", "block_global=false"]
+# Espone la porta
+EXPOSE 8080
+
+# Comando di default (può essere sovrascritto dal docker-compose)
+CMD ["mitmdump", "-s", "app.py", "--ssl-insecure", "--ignore-hosts", "^(.+\\.)?(brave\\.com|microsoft\\.com|googleapis\\.com|windowsupdate\\.com|visualstudio\\.com):443$"]

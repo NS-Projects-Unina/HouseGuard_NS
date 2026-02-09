@@ -119,7 +119,7 @@ class PhishingProxy:
 
         self.logger.log(ALERT, "Updaters avviati")
 
-    def staticAnalysis_score(self, url, is_domain = False, use_virus_total = True) -> float:
+    def staticAnalysis_score(self, url, is_domain = False, use_virus_total = False) -> float:
         # Sistema a punteggio: se viene superata una certa soglia, allora il link viene considerato sospetto
         score = 0
         #TODO Analisi di scrittura del link (ancora da implementare)
@@ -127,6 +127,7 @@ class PhishingProxy:
         # Analisi certificati
         # - WARNING: certificato self-signed o emesso da ente gratuito (punteggio 50)
         # - DANGER: assenza di certificato (punteggio 100) 
+        '''
         try:
             certificate_analysis = self.certificate_control.analyze(url)
         except Exception as e:
@@ -145,7 +146,7 @@ class PhishingProxy:
             print(certificate_analysis)
             print("-" * 30)
             score += 100
-
+        '''
         # Analisi database scaricabili(PhishingArmy, PhishTank implementati al momento)
         # Blocco istantaneo (score inf) per ogni presenza rilevata
 
@@ -185,7 +186,7 @@ class PhishingProxy:
             
             # Pausa obbligatoria per API Free (4 richieste/min)
             #time.sleep(15)
-            time.sleep(5)
+            
 
         return score
 
@@ -210,6 +211,11 @@ class PhishingProxy:
         #     Se l'URL è presente, si verifica se
         #     è in atto una analisi dinamica per l'url corrente
         #     o se la richiesta va bloccata o lasciata passare
+        # Lista di domini che rompono la connessione con MITM (Certificate Pinning)
+        # Questi non dovrebbero nemmeno essere intercettati, ma se lo sono, li lasciamo passare.
+
+    
+        
         decision = self.cache.get(url)
         if decision:
             self.logger.log(ALERT, f"[Proxy] decision in cache {decision}")
@@ -285,24 +291,49 @@ class PhishingProxy:
 
         return "processing"
 
-    # Intercetta la richiesta HTTP
+# Intercetta la richiesta HTTP
     def request(self, flow: http.HTTPFlow) -> None:
-
         url = flow.request.pretty_url
         domain = flow.request.pretty_host
         path = flow.request.path
 
-        self.logger.info(f"[Proxy] Ricevuta richiesta con URL {url} e dominio {domain}")
+        # 1. FILTRO "RUMORE DI FONDO" (Traffico di sistema che non ci interessa)
+        # Ignoriamo brave, microsoft, google update, etc. per non intasare il proxy
+        ignored_domains = [
+            "brave.com", "microsoft.com", "googleapis.com", "gstatic.com", 
+            "mozilla.org", "windowsupdate.com", "visualstudio.com"
+        ]
+        if any(ignored in domain for ignored in ignored_domains):
+            return # Lascia passare senza fare nulla
 
-        # --- Verifica il tipo di contenuto richiesto
+        # 2. FILTRO RISORSE STATICHE (Il trucco per la velocità 🚀)
+        # Se l'URL finisce con un'estensione di file multimediale/statico, ignoralo.
+        # Non c'è bisogno di controllare se un .png o un .css è phishing.
+        static_extensions = (
+            ".jpg", ".jpeg", ".png", ".gif", ".ico", ".svg", ".webp", # Immagini
+            ".css", ".woff", ".woff2", ".ttf", ".otf",                # Stili e Font
+            ".js", ".map", ".json", ".xml"                            # Script tecnici
+        )
+        # Controllo rapido sull'estensione (case insensitive)
+        if path.lower().endswith(static_extensions):
+            return # Esce subito, traffico istantaneo!
+
+        # --- DA QUI IN GIÙ ANALIZZIAMO SOLO LE PAGINE VERE ---
+        
+        self.logger.info(f"[Proxy] 🔎 Analisi in corso per: {url}")
+
+        # La tua logica originale continua qui...
+        # Verifica il tipo di contenuto richiesto (extra check)
+        '''
         deep_analyze = False
         request_content_type = flow.request.headers.get("Accept", None)
         if request_content_type:
             for content_type in self.analyzable_contents:
                 if content_type in request_content_type:
                     deep_analyze = True
+        '''
         
-        # --- Verifica se il path è la radice del dominio
+        # Verifica se è root path
         isRootPath = False
         actualPath = ""
         if path:
@@ -310,11 +341,8 @@ class PhishingProxy:
             if actualPath in ["/", "/index.html", "/index.php"]:
                 isRootPath = True
 
-        self.logger.info(f"[Proxy] is root path: {isRootPath}, actual path : {actualPath}")
-        
-        self.logger.info(f"[Proxy] Content type richiesto: {request_content_type}")
-
-        decision = self.process_request(url, domain, is_root_path = isRootPath, deep_analyze=deep_analyze)
+        # Esegui la tua logica di decisione
+        decision = self.process_request(url, domain, is_root_path=isRootPath, deep_analyze=deep_analyze)
 
         if decision == "processing":
             flow.response = self.buildWaitResponse(url)
@@ -322,8 +350,6 @@ class PhishingProxy:
             flow.response = self.buildBlockResponse(url)
         elif decision == "pass":
             return
-        else:
-            self.logger.error("[Proxy] Ricevuta decisione inattesa")
         
         
     # --- Analisi dinamica con CAPE
