@@ -157,6 +157,50 @@ class PhishingProxy:
 
         self.logger.log(ALERT, "Updaters avviati")
 
+    def blocca_indirizzo(self, port, indirizzo_target):
+        print(f"🔒 Blocco traffico per {indirizzo_target}:{port}...")
+
+        # --- REGOLA 1: BLOCCO ENTRATA (IN) ---
+        rule_in = f"HouseGuard_BLOCK_IN_{indirizzo_target}_{port}"
+        cmd_in = (
+            f'netsh advfirewall firewall add rule '
+            f'name="{rule_in}" '
+            f'dir=in '           # Entrata
+            f'action=block '     # Blocca
+            f'protocol=TCP '    
+            f'localport={port} '
+            f'localip={indirizzo_target}'
+        )
+
+        # --- REGOLA 2: BLOCCO USCITA (OUT) ---
+        rule_out = f"HouseGuard_BLOCK_OUT_{indirizzo_target}_{port}"
+        cmd_out = (
+            f'netsh advfirewall firewall add rule '
+            f'name="{rule_out}" '
+            f'dir=out '          # Uscita
+            f'action=block '     # Blocca
+            f'protocol=TCP '
+            f'localport={port} '
+            f'localip={indirizzo_target}'
+        )
+
+        try:
+            # 1. Pulizia preventiva
+            subprocess.run(["ssh", f"{self.user}@{self.ip}", f"netsh advfirewall firewall delete rule name=\"{rule_in}\""], stderr=subprocess.DEVNULL)
+            subprocess.run(["ssh", f"{self.user}@{self.ip}", f"netsh advfirewall firewall delete rule name=\"{rule_out}\""], stderr=subprocess.DEVNULL)
+
+            # 2. Applicazione Regole
+            print(f"   -> Scrivendo regola INBOUND...")
+            subprocess.run(["ssh", f"{self.user}@{self.ip}", cmd_in], check=True)
+            
+            print(f"   -> Scrivendo regola OUTBOUND...")
+            subprocess.run(["ssh", f"{self.user}@{self.ip}", cmd_out], check=True)
+            
+            print("✅ Blocco attivato con successo.")
+
+        except subprocess.CalledProcessError as e:
+            print(f"❌ Errore durante l'applicazione del firewall: {e}")
+
     def staticAnalysis_score(self, url, is_domain = False, use_virus_total = True) -> float:
         # Sistema a punteggio: se viene superata una certa soglia, allora il link viene considerato sospetto
         score = 0
