@@ -83,37 +83,37 @@ class PhishingProxy:
         return waitResponse
 
     def get_windows_config():
-    config = {}
+        config = {}
 
-    # 1. TROVA L'UTENTE WINDOWS
-    try:
-        user_output = subprocess.check_output(
-            ["cmd.exe", "/c", "echo %USERNAME%"], 
-            stderr=subprocess.DEVNULL
-        ).decode().strip()
-        config['user'] = user_output
-    except Exception:
-        config['user'] = "unknown"
+        # 1. TROVA L'UTENTE WINDOWS
+        try:
+            user_output = subprocess.check_output(
+                ["cmd.exe", "/c", "echo %USERNAME%"], 
+                stderr=subprocess.DEVNULL
+            ).decode().strip()
+            config['user'] = user_output
+        except Exception:
+            config['user'] = "unknown"
 
-    # 2. TROVA L'IP DI WINDOWS
-    #Chiediamo alla tabella di routing di Linux
-    try:
-        route_output = subprocess.check_output(["ip", "route"]).decode()
-        
-        gateway_ip = "127.0.0.1"
-        for line in route_output.splitlines():
-            if "default via" in line:
-                parts = line.split()
-                # La terza parola è sempre l'IP del gateway (es. 172.20.0.1)
-                gateway_ip = parts[2]
-                break
-                
-        config['ip'] = gateway_ip
-        
-    except Exception:
-        config['ip'] = "127.0.0.1"
+        # 2. TROVA L'IP DI WINDOWS
+        #Chiediamo alla tabella di routing di Linux
+        try:
+            route_output = subprocess.check_output(["ip", "route"]).decode()
+            
+            gateway_ip = "127.0.0.1"
+            for line in route_output.splitlines():
+                if "default via" in line:
+                    parts = line.split()
+                    # La terza parola è sempre l'IP del gateway (es. 172.20.0.1)
+                    gateway_ip = parts[2]
+                    break
+                    
+            config['ip'] = gateway_ip
+            
+        except Exception:
+            config['ip'] = "127.0.0.1"
 
-    return config  
+        return config  
 
     def load(self, loader):
         load_dotenv()
