@@ -126,7 +126,7 @@ class PhishingProxy:
         
         self.cape_engine = CapeControl(CAPE_API_URL, CAPE_TOKEN)
 
-        self.analyzable_contents = ["text/html", "text/plain"]
+        self.analyzable_contents = ["text/html"]
 
         #Inizializzazione attributi utente e ip di windows
         self.config_data= self.get_windows_config()
@@ -145,7 +145,16 @@ class PhishingProxy:
         self.phishing_army.load_data(True if not hasattr(self, 'lastUpdate') or (time.time() - self.lastUpdate) > 21600 else False)
         self.phish_tank.load_data(True if not hasattr(self, 'lastUpdate') or (time.time() - self.lastUpdate) > 3600 else False)
 
+
+        # True Per vedere i log di qualsiasi URL,
+        # False per i soli URL da analizzare approfonditamente
+        self.debug_mode = False
+
+        logging.basicConfig()
         self.logger = logging.getLogger(__name__)
+        self.logger.setLevel(logging.INFO)
+        if self.debug_mode:
+            self.logger.setLevel(logging.DEBUG)
 
         self.logger.log(ALERT, "Avvio updaters in corso...")
 
@@ -286,7 +295,7 @@ class PhishingProxy:
         
         return decision
 
-    def process_request(self, url, domain, is_root_path = False, deep_analyze = False) -> str:
+    def process_response(self, url, domain, is_root_path = False, deep_analyze = False) -> str:
         
         # --- Check su cache:
         #     Se l'URL è presente, si verifica se
@@ -296,7 +305,7 @@ class PhishingProxy:
         if decision:
             self.logger.log(ALERT, f"[Proxy] decision in cache {decision}")
             if decision == "processing":
-                self.logger.info("[Proxy] Analisi dinamica in corso")
+                self.logger.debug("[Proxy] Analisi dinamica in corso")
             elif decision == "block":
                 self.logger.log(ALERT, "[Proxy] URL bloccato da cache")
             return decision
@@ -309,18 +318,18 @@ class PhishingProxy:
         # --- Check su whitelist: se l'url o il dominio è presente,
         #     allora la richiesta può passare tranquillamente
         if self.basic_control.checkWhitelist(domain):
-            self.logger.info("[Proxy] dominio in whitelist")
+            self.logger.debug("[Proxy] dominio in whitelist")
             return
         if self.basic_control.checkWhitelist(url):
-            self.logger.info("[Proxy] URL in whitelist")
+            self.logger.debug("[Proxy] URL in whitelist")
             return
 
         # --- Check su blacklist: se l'url o il dominio è presente, allora la richiesta viene bloccata
         if self.basic_control.checkBlacklist(domain):
-            self.logger.info("[Proxy] dominio in blacklist")
+            self.logger.debug("[Proxy] dominio in blacklist")
             return "block"
         if self.basic_control.checkBlacklist(url):
-            self.logger.info("[Proxy] URL in blacklist")
+            self.logger.debug("[Proxy] URL in blacklist")
             return "block"
 
         # --- Effettua analisi statica
@@ -336,7 +345,7 @@ class PhishingProxy:
             #    Se il dominio è non fidato si blocca, altrimenti si continua
             if decision == PhishingValue.TRUSTED:
                 self.cache.set(domain, "pass")
-                self.logger.info("[Proxy] dominio non malevolo messo in cache")
+                self.logger.debug("[Proxy] dominio non malevolo messo in cache")
                 
             elif decision == PhishingValue.PHISHING:
                 self.cache.set(domain, "block")
@@ -351,38 +360,47 @@ class PhishingProxy:
 
         if decision == PhishingValue.TRUSTED:
             self.cache.set(url, "pass")
-            self.logger.info("[Proxy] URL non malevolo messo in cache")
+            self.logger.debug("[Proxy] URL non malevolo messo in cache")
             return "pass"
         elif decision == PhishingValue.PHISHING:
             self.cache.set(url, "block")
             self.logger.log(ALERT, "[Proxy] URL bloccato e messo in cache")
             return "block"
         
-        self.logger.info("[Proxy] URL sospetto, inizio analisi dinamica...")
+        self.logger.debug("[Proxy] URL sospetto, inizio analisi dinamica...")
 
         # Si arriva qui se l'URL è sospetto
-        self.cache.set(url, "processing")
-        t = threading.Thread(target=dynamic_analysis, args=(url,domain,self.cache))
-        t.start()
+        # Si analizza l'URL solo se corrisponde ad una delle risorse specificate
+        if deep_analyze:
+            self.cache.set(url, "processing")
+            t = threading.Thread(target=dynamic_analysis, args=(url,domain,self.cache))
+            t.start()
 
-        return "processing"
+            return "processing"
+        else:
+            return "pass"
 
     # Intercetta la richiesta HTTP
-    def request(self, flow: http.HTTPFlow) -> None:
-
+    def response(self, flow: http.HTTPFlow) -> None:
+        
         url = flow.request.pretty_url
         domain = flow.request.pretty_host
         path = flow.request.path
 
-        self.logger.info(f"[Proxy] Ricevuta richiesta con URL {url} e dominio {domain}")
-
-        # --- Verifica il tipo di contenuto richiesto
+        # --- Verifica in base al tipo di contenuto ricevuto
+            # se serve una analisi approfondita.
+            # Si verifica solo se lo status code è 2xx ma non
+            # di 204 : No Content
         deep_analyze = False
-        request_content_type = flow.request.headers.get("Accept", None)
-        if request_content_type:
-            for content_type in self.analyzable_contents:
-                if content_type in request_content_type:
-                    deep_analyze = True
+        response_content_type = None
+        status_code = flow.response.status_code
+        if str(status_code)[0] == "2" and status_code != 204:
+            deep_analyze = False
+            response_content_type = flow.response.headers.get("Content-Type", None)
+            if response_content_type:
+                for content_type in self.analyzable_contents:
+                    if content_type in response_content_type:
+                        deep_analyze = True
         
         # --- Verifica se il path è la radice del dominio
         isRootPath = False
@@ -392,11 +410,23 @@ class PhishingProxy:
             if actualPath in ["/", "/index.html", "/index.php"]:
                 isRootPath = True
 
-        self.logger.info(f"[Proxy] is root path: {isRootPath}, actual path : {actualPath}")
+        logString = f"[Proxy] Ricevuta risposta da dominio {domain}\n" \
+                + f"URL: {url}\n" \
+                + f"È path di root: {isRootPath}\n" \
+                + f"Content type: {response_content_type}\n" \
+                + f"Analisi approndita richiesta: {deep_analyze}\n" \
+                + f"-" * 30
         
-        self.logger.info(f"[Proxy] Content type richiesto: {request_content_type}")
+        if not self.debug_mode:
+            if deep_analyze:
+                self.logger.setLevel(logging.DEBUG)
+                self.logger.info(logString)
+            else:
+                self.logger.setLevel(logging.INFO)
+        else:
+            self.logger.debug(logString)
 
-        decision = self.process_request(url, domain, is_root_path = isRootPath, deep_analyze=deep_analyze)
+        decision = self.process_response(url, domain, is_root_path = isRootPath, deep_analyze=deep_analyze)
 
         if decision == "processing":
             flow.response = self.buildWaitResponse(url)
