@@ -1,7 +1,7 @@
 from mitmproxy import http
 import requests
 import threading
-from staticLinkModule import BasicControl,  CertificateControl, VirusTotalControl, PhishingArmyControl, PhishTankControl, CapeControl
+from staticLinkModule import BasicControl,  CertificateControl, VirusTotalControl, PhishingArmyControl, CapeControl
 from updater import DAO, UpdaterThread
 import os
 import sys
@@ -137,14 +137,12 @@ class PhishingProxy:
         self.basic_control = BasicControl()
         self.certificate_control = CertificateControl()
         self.phishing_army = PhishingArmyControl()
-        self.phish_tank = PhishTankControl()
         self.vt_engine = VirusTotalControl(os.getenv("VIRUSTOTAL_API_KEY"))
 
         self.lastUpdate = time.time()
 
         self.phishing_army.load_data(True if not hasattr(self, 'lastUpdate') or (time.time() - self.lastUpdate) > 21600 else False)
-        self.phish_tank.load_data(True if not hasattr(self, 'lastUpdate') or (time.time() - self.lastUpdate) > 3600 else False)
-
+        
 
         # True Per vedere i log di qualsiasi URL,
         # False per i soli URL da analizzare approfonditamente
@@ -160,9 +158,6 @@ class PhishingProxy:
 
         pishing_army_updater = UpdaterThread(21600, self.phishing_army)
         pishing_army_updater.start()
-
-        phish_tank_updater = UpdaterThread(3600, self.phish_tank)
-        phish_tank_updater.start()
 
         self.logger.log(ALERT, "Updaters avviati")
 
@@ -248,12 +243,6 @@ class PhishingProxy:
                 print(f"      Dominio bloccato: {check_phishing_army['domain_matched']}")
                 return float('inf')
 
-        print("   🐟  Controllo PhishTank in corso...")
-        check_phish_tank = self.phish_tank.check_url(url)
-        if check_phish_tank:
-            print(f"   🛑 RILEVATO DA PHISHTANK!")
-            print(f"      Target imitato: {check_phish_tank['target']}")
-            return float('inf')
         
         # Analisi effettuata da VirusTotal
         # VirusTotal effettua un rapporto tra voti maliziosi e voti totali
