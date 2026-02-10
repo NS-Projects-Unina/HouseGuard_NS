@@ -28,13 +28,23 @@ def get_clean_domain(url):
 
 class BasicControl:
 
+    def checkList(self, link, type_list): # Ho rinominato 'type' in 'type_list' per evitare conflitti con la keyword python
+        # CALCOLO DEL PERCORSO ASSOLUTO
+        # Trova la cartella dove si trova QUESTO file (staticLinkModule.py)
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        
+        # Unisce il percorso base con il nome del file (es. whitelist.txt)
+        file_path = os.path.join(base_dir, f"{type_list}.txt")
 
-    def checkList(self, link, type):
-        with open(f"{type}.txt", 'r') as f:
-            list = [line.strip() for line in f]
-        if link in list:
-            return True
-        else:
+        try:
+            with open(file_path, 'r') as f:
+                for line in f:
+                    if link in line.strip(): 
+                        return True
+            return False
+        except FileNotFoundError:
+            # Opzionale: stampa un errore nei log di mitmproxy se il file manca
+            print(f"ERRORE: File non trovato: {file_path}")
             return False
         
     def checkBlacklist(self, link):

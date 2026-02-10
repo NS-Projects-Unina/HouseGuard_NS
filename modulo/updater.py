@@ -19,7 +19,7 @@ class DAO:
     def get_db_connection(self):
         db_int = self.db_int
         redis_cli = redis.Redis(
-            host=os.getenv("REDIS_HOST"),
+            host=os.getenv('REDIS_HOST', '127.0.0.1'),
             port=6379,
             decode_responses=True,
             db = db_int

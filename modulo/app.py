@@ -424,7 +424,7 @@ class PhishingProxy:
                 isRootPath = True
 
         # Esegui la tua logica di decisione
-        decision = self.process_request(url, domain, is_root_path=isRootPath, deep_analyze=deep_analyze)
+        decision = self.process_request(url, domain, is_root_path=isRootPath, deep_analyze=False)
 
         if decision == "processing":
             flow.response = self.buildWaitResponse(url)

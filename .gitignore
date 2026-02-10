@@ -26,6 +26,7 @@ phishtank*
 phishing_army*
 local/
 myenv/
+venv/
 a5d85868d62f1fef46348b01205646dd78158dc6
 modulo/.mitmproxy/mitmproxy-ca-cert.pem
 *.log
