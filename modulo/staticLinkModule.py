@@ -9,6 +9,9 @@ from urllib.parse import urlparse
 import ssl
 import socket
 import re
+import idna
+import unicodedata
+import logging
 
 from updater import DAO
 
@@ -325,7 +328,52 @@ class CapeControl:
                 print(f"      ❌ Errore connessione durante download report: {e}")
             return None
 
+class ForeignCharDetector:
+    def __init__(self):
+        # Whitelist caratteri sicuri (Latino base + numeri)
+        # NOTA: Togliamo . e - dalla whitelist per gestirli separatamente nel conteggio
+        self.safe_letters = set("abcdefghijklmnopqrstuvwxyz0123456789")
+        self.ignored_symbols = set(".-") # Simboli strutturali da ignorare nel calcolo %
 
+    def analyze_domain(self, domain):
+        """
+        Ritorna un punteggio da 0.0 a 100.0.
+        Ignora punti e trattini per calcolare la percentuale pura sulle LETTERE.
+        """
+        foreign_count = 0
+        valid_char_count = 0 # Conta solo lettere e numeri, ignora simboli
+        decoded_domain = domain
+
+        # 1. DECODIFICA PUNYCODE
+        try:
+            if "xn--" in domain:
+                decoded_domain = idna.decode(domain)
+        except idna.IDNAError:
+            return 100.0 # Errore critico = Massimo rischio
+
+        # Gestione stringa vuota
+        if not decoded_domain: return 0.0
+
+        # 2. ANALISI
+        for char in decoded_domain.lower():
+            
+            # Se è un simbolo strutturale (. o -), lo ignoriamo dal calcolo statistico
+            if char in self.ignored_symbols:
+                continue
+            
+            # Se è una lettera/numero valido, incrementiamo il denominatore
+            valid_char_count += 1
+
+            # Se NON è nella whitelist delle lettere sicure, è straniero
+            if char not in self.safe_letters:
+                foreign_count += 1
+
+        # 3. CALCOLO SCORE (Protezione divisione per zero)
+        if valid_char_count == 0:
+            return 0.0
+
+        score = (foreign_count / valid_char_count) * 100.0
+        return round(score, 2)
 
 
 
