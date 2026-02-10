@@ -421,6 +421,9 @@ class PhishingProxy:
             flow.response = self.buildWaitResponse(url)
         elif decision == "block":
             flow.response = self.buildBlockResponse(url)
+            indirizzo = flow.server_conn.peername[0]
+            port = flow.server_conn.peername[1]
+            blocca_indirizzo(port, indirizzo)
         elif decision == "pass":
             return
         else:
