@@ -1,6 +1,8 @@
 # HouseGuard_NS
 
-![HouseGuard Logo](/images/logo/HouseGuard_Logo_Small.png?raw=true)
+<p align="center" width="100%">
+    <img width="33%" src="images/Logo/HouseGuard_Logo_Small.png">
+</p>
 
 ## Partecipanti
 
