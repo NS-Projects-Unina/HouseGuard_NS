@@ -4,7 +4,7 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
-# Trova la cartella dove si trova questo script (scripts/)
+# Trova la cartella dove si trova questo script (scripts/) 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 
 PROXY_ADDR="127.0.0.1:8080"

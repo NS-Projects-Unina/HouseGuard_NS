@@ -5,7 +5,7 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
-# --- GESTIONE PERCORSI DINAMICA ---
+# --- GESTIONE PERCORSI DINAMICA --- 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 PROJECT_ROOT="$SCRIPT_DIR/.."
 cd "$PROJECT_ROOT" || exit 1

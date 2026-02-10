@@ -10,7 +10,7 @@ echo -e "${YELLOW}==============================================${NC}"
 echo -e "${YELLOW}   ARRESTO HOUSEGUARD (WIN + WSL)             ${NC}"
 echo -e "${YELLOW}==============================================${NC}"
 
-# 1. Ferma WSL
+# 1. Ferma WSL 
 "$SCRIPT_DIR/stop_protection.sh"
 
 # 2. Disattiva Proxy Windows

@@ -15,7 +15,7 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 # 2. Definisci la root del progetto (un livello sopra 'scripts')
 PROJECT_ROOT="$SCRIPT_DIR/.."
 
-# 3. Spostiamoci nella root del progetto per eseguire tutto correttamente
+# 3. Spostiamoci nella root del progetto per eseguire tutto correttamente 
 cd "$PROJECT_ROOT" || exit 1
 
 echo -e "${YELLOW}[*] Root del progetto impostata a: $(pwd)${NC}"
