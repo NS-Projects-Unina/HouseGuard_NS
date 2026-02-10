@@ -29,10 +29,7 @@ source venv/bin/activate
 
 1. USARE WSL
 2. creare un ambiente virtuale
-3. installare le dipendenze
-   
-   ```pip install -r modulo/requirements.txt
-   
-   ```
-4. Avviare lo script col comando `./scripts/global_start.sh`
+3. installare le dipendenze   `pip install -r modulo/requirements.txt`
+4. Avviare il proxy col comando `./scripts/global_start.sh`
+5. Fermare il proxy col comando `./scripts/global_stop.sh`
 
