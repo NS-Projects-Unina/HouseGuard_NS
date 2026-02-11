@@ -1,0 +1,2 @@
+# Forza l'uso di LF per tutti i file .sh
+*.sh text eol=lf

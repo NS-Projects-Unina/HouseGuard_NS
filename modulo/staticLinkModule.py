@@ -9,6 +9,13 @@ from urllib.parse import urlparse
 import ssl
 import socket
 import re
+import idna
+import unicodedata
+import logging
+import textdistance
+from collections import defaultdict
+from functools import lru_cache
+
 
 from updater import DAO
 
@@ -104,82 +111,6 @@ class CertificateControl:
                 return {"status": "WARNING", "reason": f"Verifica SSL fallita (possibile self-signed o root mancante): {e}"}
             except Exception as e:
                 return {"status": "ERROR", "reason": str(e)}
-
-
-class PhishTankControl:
-    def __init__(self, db_folder='.'):
-        self.PT_URL = 'http://data.phishtank.com/data/online-valid.json.gz'
-        self.GZ_FILE = os.path.join(db_folder, 'phishtank.json.gz')
-        self.JSON_FILE = os.path.join(db_folder, 'phishtank.json')
-
-        self.database = DAO("REDIS_DB_BLACKLIST")
-
-        # Header anti-blocco 403
-        self.headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-        }
-
-    def _download_and_extract(self):
-        print("🔄 [PhishTank] Scaricamento aggiornamenti...")
-        try:
-            response = requests.get(self.PT_URL, headers=self.headers, stream=True)
-            if response.status_code == 200:
-                with open(self.GZ_FILE, 'wb') as f:
-                    for chunk in response.iter_content(chunk_size=8192):
-                        f.write(chunk)
-                
-                print("📦 [PhishTank] Decompressione database...")
-                with gzip.open(self.GZ_FILE, 'rb') as f_in:
-                    with open(self.JSON_FILE, 'wb') as f_out:
-                        shutil.copyfileobj(f_in, f_out)
-                print("✅ [PhishTank] Aggiornamento completato.")
-                return True
-            else:
-                print(f"❌ [PhishTank] Errore download: Status {response.status_code}")
-                return False
-        except Exception as e:
-            print(f"❌ [PhishTank] Errore critico: {e}")
-            return False
-
-    def load_data(self, force_update=False):
-        if force_update or not os.path.exists(self.JSON_FILE):
-            success = self._download_and_extract()
-            if not success and not os.path.exists(self.JSON_FILE):
-                return
-
-        print("📂 [PhishTank] Caricamento dati in memoria...")
-        try:
-            with open(self.JSON_FILE, 'r', encoding='utf-8') as f:
-                raw_data = json.load(f)
-            
-            database = {
-                entry['url']: entry['target']
-                for entry in raw_data
-                if entry.get('verified') == 'yes' 
-            }
-
-            self.database.load_data(database)
-
-            print(f"🔹 [PhishTank] {len(database)} URL caricati.")
-        except Exception as e:
-            print(f"❌ [PhishTank] Errore lettura JSON: {e}")
-
-    def check_url(self, url):
-        if self.database.is_empty():
-            print("⚠️ [PhishTank] DB vuoto. Esegui load_data() prima.")
-            return None
-        conn = self.database.get_db_connection()
-
-        target = conn.get(url)
-        if target:
-            return {
-                'detected': True,
-                'source': 'PhishTank',
-                'target': target,
-                'verified': True 
-            }
-        return None
-
 
 class PhishingArmyControl:
     def __init__(self, db_folder='.'):
@@ -411,7 +342,160 @@ class CapeControl:
                 print(f"      ❌ Errore connessione durante download report: {e}")
             return None
 
+class ForeignCharDetector:
+    def __init__(self):
+        # Whitelist caratteri sicuri (Latino base + numeri)
+        # NOTA: Togliamo . e - dalla whitelist per gestirli separatamente nel conteggio
+        self.safe_letters = set("abcdefghijklmnopqrstuvwxyz0123456789")
+        self.ignored_symbols = set(".-") # Simboli strutturali da ignorare nel calcolo %
 
+    def analyze_domain(self, domain):
+        """
+        Ritorna un punteggio da 0.0 a 100.0.
+        Ignora punti e trattini per calcolare la percentuale pura sulle LETTERE.
+        """
+        foreign_count = 0
+        valid_char_count = 0 # Conta solo lettere e numeri, ignora simboli
+        decoded_domain = domain
 
+        # 1. DECODIFICA PUNYCODE
+        try:
+            if "xn--" in domain:
+                decoded_domain = idna.decode(domain)
+        except idna.IDNAError:
+            return 100.0 # Errore critico = Massimo rischio
 
+        # Gestione stringa vuota
+        if not decoded_domain: return 0.0
+
+        # 2. ANALISI
+        for char in decoded_domain.lower():
+            
+            # Se è un simbolo strutturale (. o -), lo ignoriamo dal calcolo statistico
+            if char in self.ignored_symbols:
+                continue
+            
+            # Se è una lettera/numero valido, incrementiamo il denominatore
+            valid_char_count += 1
+
+            # Se NON è nella whitelist delle lettere sicure, è straniero
+            if char not in self.safe_letters:
+                foreign_count += 1
+
+        # 3. CALCOLO SCORE (Protezione divisione per zero)
+        if valid_char_count == 0:
+            return 0.0
+
+        score = (foreign_count / valid_char_count) * 100.0
+        return round(score, 2)
+
+class TypoDetector:
+    def __init__(self, whitelist_domains):
+        
+        # 1. SET per lookup istantaneo
+        self.whitelist_set = set(whitelist_domains)
+        
+        # 2. INDICE PER LUNGHEZZA per Typo Check
+        self.len_index = defaultdict(list)
+        
+        # 3. SET DEI CORE per Combo Check
+        self.whitelist_cores = set()
+
+        # PRE-PROCESSING
+        for domain in whitelist_domains:
+            core = self._extract_core(domain)
+            
+            # Salviamo il core per i controlli successivi
+            if len(core) > 2: # Ignoriamo domini cortissimi
+                self.len_index[len(core)].append(core)
+                self.whitelist_cores.add(core)
+
+        # Mappa Leet Speak (Numeri -> Lettere)
+        self.leet_map = str.maketrans({
+            '0': 'o', '1': 'l', '3': 'e', '4': 'a', '5': 's', 
+            '6': 'b', '7': 't', '8': 'b', '$': 's', '@': 'a'
+        })
+        
+        # Soglia minima per considerare qualcosa un "Typo" (Jaro-Winkler)
+        self.min_similarity_threshold = 0.85
+
+    def _extract_core(self, domain):
+        #Estrae la parte centrale del dominio
+        clean = domain.replace("www.", "").lower()
+        if "." in clean:
+            return clean.split(".")[0] 
+        return clean
+
+    # 4. CACHE MEMORY
+    # Memorizza gli ultimi 2048 risultati. 
+    @lru_cache(maxsize=2048)
+    def get_typo_score(self, visited_domain):
+        """
+        Restituisce una tupla: (Score, Target_Imitato).
+        Score: 0.0 (Sicuro) -> 100.0 (Pericolo).
+        Target_Imitato: Nome del sito copiato (o None).
+        """
+        
+        # A. Controllo Esatto
+        if visited_domain in self.whitelist_set:
+            return 0.0, None
+
+        visited_core = self._extract_core(visited_domain)
+        
+        # B. Controllo Core Esatto
+        if visited_core in self.whitelist_cores:
+            return 0.0, None
+
+        v_len = len(visited_core)
+
+        # C. CONTROLLO COMBO-SQUATTING
+        # Verifica se un marchio è contenuto interamente nel dominio visitato.
+        if v_len > 4: # Evitiamo falsi positivi su stringhe corte
+            for target_core in self.whitelist_cores:
+                # Ignoriamo target troppo corti per evitare falsi allarmi
+                if len(target_core) < 4: 
+                    continue
+                
+                
+                if target_core in visited_core:
+                    # Rischio massimo: stanno usando il nome esatto del brand
+                    return 100.0, target_core
+
+        # D. CONTROLLO TYPOSQUATTING (Distanza Jaro-Winkler)
+        
+        # 1. Selezione Candidati (Length Pruning a +/- 2)
+        candidates = []
+        min_len = max(1, v_len - 2)
+        max_len = v_len + 2
+        
+        for length in range(min_len, max_len + 1):
+            if length in self.len_index:
+                candidates.extend(self.len_index[length])
+        
+        if not candidates:
+            return 0.0, None
+
+        # 2. Normalizzazione Leet Speak
+        visited_norm = visited_core.translate(self.leet_map)
+
+        # 3. Calcolo Distanza
+        max_similarity = 0.0
+        best_target_match = None
+
+        for target_core in candidates:
+            score = textdistance.jaro_winkler(visited_norm, target_core)
+            
+            if score > max_similarity:
+                max_similarity = score
+                best_target_match = target_core
+                
+                # Exit Early: Se è quasi identico, inutile continuare
+                if max_similarity > 0.98:
+                    break
+
+        # 4. Calcolo Finale Score
+        if max_similarity < self.min_similarity_threshold:
+            return 0.0, None
+        
+        return round(max_similarity * 100, 2), best_target_match
 
