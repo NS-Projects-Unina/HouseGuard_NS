@@ -4,6 +4,21 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
+
+
+
+# 0. Docker Desktop
+echo -e "${GREEN}[*] Windows: Verifica Docker Desktop...${NC}"
+if ! docker info > /dev/null 2>&1; then
+    echo -e "${YELLOW}ERRORE: Docker Desktop non è in esecuzione o l'integrazione WSL non è attiva.${NC}"
+    exit 1
+fi
+echo -e "${GREEN}   -> Docker Desktop è in esecuzione${NC}"
+
+
+
+
+
 # Trova la cartella dove si trova questo script (scripts/) 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 
