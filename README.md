@@ -46,6 +46,10 @@ L'analisi del traffico viene effettuata a vari livelli:
 2. Il sito è considerato sospetto: il traffico viene inoltrato a CAPE per effettuare analisi più approfondite
 3. Il sito è considerato pericoloso: il traffico viene bloccato.
 
+<p align="center" width="100%">
+    <img width="80%" src="images/analisi_statica.png">
+</p>
+
 #### Analisi statica `modulo/staticLinkModule.py`
 
 Questo modulo esegue un'analisi preliminare dell'URL senza visitarlo direttamente, permettendo una valutazione rapida della minaccia. I suoi componenti principali includono:

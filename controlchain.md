@@ -1,6 +1,7 @@
 # Catena di Controllo URL: HouseGuard_NS
 
 Questo documento descrive il flusso decisionale utilizzato da **HouseGuard_NS** per analizzare e filtrare le richieste HTTP intercettate.
+Per l'albero di decisione dell'analisi statica consultare l'immagine apposita.
 
 ```ascii
                                     (Richiesta HTTP Intercettata)
@@ -33,17 +34,18 @@ Questo documento descrive il flusso decisionale utilizzato da **HouseGuard_NS** 
          |
          v
 +-----------------------------------------------------------------------------------------+
-|                            3. ANALISI STATICA (Punteggio)                               |
+|                            3. ANALISI STATICA (Albero di decisione)                     |
 |                                                                                         |
 |  A. Analisi DOMINIO:                                                                    |
 |     1. Gestione Certificati (Self-signed? Free CA? Assente?)                            |
 |     2. Phishing Army (Database locale) --> Se Trovato: BLOCK Immediato                  |
 |     3. Typosquatting (Distanza da domini legittimi white-listed)                        |
 |     4. Caratteri Stranieri (Omografi)                                                   |
+|     4. VirusTotal API (Se DeepAnalyze=True)                                             |
 |                                                                                         |
 |     [Decisione Dominio] --(BLOCK)--> [Cache Dominio: BLOCK] --------------------------->| (Block)
 |            |                                                                            |
-|          (Pass)                                                                         |
+|          (Pass o Suspect)                                                               |
 |            v                                                                            |
 |  B. Analisi URL Completo:                                                               |
 |     1. VirusTotal API (Se DeepAnalyze=True)                                             |
@@ -51,14 +53,14 @@ Questo documento descrive il flusso decisionale utilizzato da **HouseGuard_NS** 
 |        - Se Quota OK: Richiesta API                                                     |
 |        - Se Quota KO: Skip (Warning)                                                    |
 |                                                                                         |
-|  [Calcolo Punteggio Totale (Certs + Typo + Foreign + VT)]                               |
+|      [Decisione URL]                                                                    |
 |            |                                                                            |
-|            +---> Punteggio Alto? ---------> [Decisione: BLOCK] ------------------------>| (Block)
+|            +---------------(BLOCK)--> [Cache URL: BLOCK] ------------------------------>| (Block)
 |            |                                                                            |
-|            +---> Punteggio Basso? --------> [Decisione: PASS] ------------------------->| (Pass)
+|            +--------------------------------------------------------------------------->| (Pass)
 |            |                                                                            |
 |            v                                                                            |
-|     (Punteggio Medio / "Suspect")                                                       |
+|     ("Suspect")                                                       |
 +--------+--------------------------------------------------------------------------------+
          |
          v
