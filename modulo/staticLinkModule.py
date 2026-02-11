@@ -116,7 +116,7 @@ class CertificateControl:
             except ssl.SSLCertVerificationError as e:
                 # Se fallisce la verifica, non è detto che sia un attacco, potrebbe mancare la root CA locale.
                 # Lo classifichiamo come WARNING invece di errore fatale.
-                return {"status": "WARNING", "reason": f"Verifica SSL fallita (possibile self-signed o root mancante): {e}"}
+                return {"status": "DANGER", "reason": f"Verifica SSL fallita (possibile self-signed o root mancante): {e}"}
             except Exception as e:
                 return {"status": "ERROR", "reason": str(e)}
 

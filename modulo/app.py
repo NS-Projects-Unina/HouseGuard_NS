@@ -11,6 +11,7 @@ from enum import Enum
 import logging
 
 from mitmproxy.log import ALERT
+import subprocess
 
 
 # Configs
@@ -238,41 +239,55 @@ class PhishingProxy:
 
         # --- REGOLA 1: BLOCCO ENTRATA (IN) ---
         rule_in = f"HouseGuard_BLOCK_IN_{indirizzo_target}_{port}"
-        cmd_in = (
-            f'netsh advfirewall firewall add rule '
-            f'name="{rule_in}" '
-            f'dir=in '           # Entrata
-            f'action=block '     # Blocca
-            f'protocol=TCP '    
-            f'localport={port} '
-            f'localip={indirizzo_target}'
-        )
+        # Usiamo powershell.exe per interop WSL -> Windows
+        # netsh va invocato direttamente come eseguibile Windows
+        netsh_cmd = "netsh.exe"
+        
+        args_in = [
+            netsh_cmd, "advfirewall", "firewall", "add", "rule",
+            f"name={rule_in}",
+            "dir=in",
+            "action=block",
+            "protocol=TCP",
+            f"localport={port}",
+            f"remoteip={indirizzo_target}" # Nota: remoteip blocca traffico da QUEL server, localip blocca porte SUL tuo pc
+        ]
 
         # --- REGOLA 2: BLOCCO USCITA (OUT) ---
         rule_out = f"HouseGuard_BLOCK_OUT_{indirizzo_target}_{port}"
-        cmd_out = (
-            f'netsh advfirewall firewall add rule '
-            f'name="{rule_out}" '
-            f'dir=out '          # Uscita
-            f'action=block '     # Blocca
-            f'protocol=TCP '
-            f'localport={port} '
-            f'localip={indirizzo_target}'
-        )
+        args_out = [
+            netsh_cmd, "advfirewall", "firewall", "add", "rule",
+            f"name={rule_out}",
+            "dir=out",
+            "action=block",
+            "protocol=TCP",
+            f"remoteport={port}", # In uscita, blocchiamo la porta remota del server
+            f"remoteip={indirizzo_target}"
+        ]
 
         try:
-            # 1. Pulizia preventiva
-            subprocess.run(["ssh", f"{self.user}@{self.ip}", f"netsh advfirewall firewall delete rule name=\"{rule_in}\""], stderr=subprocess.DEVNULL)
-            subprocess.run(["ssh", f"{self.user}@{self.ip}", f"netsh advfirewall firewall delete rule name=\"{rule_out}\""], stderr=subprocess.DEVNULL)
+            # 1. Pulizia preventiva (ignoriamo errori se non esiste)
+            subprocess.run([netsh_cmd, "advfirewall", "firewall", "delete", "rule", f"name={rule_in}"], 
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.run([netsh_cmd, "advfirewall", "firewall", "delete", "rule", f"name={rule_out}"], 
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
             # 2. Applicazione Regole
             self.log_print(f"   -> Scrivendo regola INBOUND...")
-            subprocess.run(["ssh", f"{self.user}@{self.ip}", cmd_in], check=True)
+            # check=True solleva eccezione se il comando fallisce (es. privilegi insufficienti)
+            subprocess.run(args_in, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             
             self.log_print(f"   -> Scrivendo regola OUTBOUND...")
-            subprocess.run(["ssh", f"{self.user}@{self.ip}", cmd_out], check=True)
+            subprocess.run(args_out, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             
-            self.log_print("✅ Blocco attivato con successo.")
+            self.log_print("✅ Blocco firewall attivato con successo (Windows Interop).")
+            
+        except subprocess.CalledProcessError as e:
+            err_msg = e.stderr.decode('cp850', errors='ignore') if e.stderr else "Nessun output di errore"
+            self.log_print(f"❌ Errore comando Firewall: {err_msg}")
+            self.log_print("   ⚠️  Assicurati che WSL sia avviato come AMMINISTRATORE.")
+        except FileNotFoundError:
+             self.log_print("❌ Errore: netsh.exe non trovato. Sei su WSL/Windows?")
 
         except subprocess.CalledProcessError as e:
             self.log_print(f"❌ Errore durante l'applicazione del firewall: {e}")
@@ -280,14 +295,6 @@ class PhishingProxy:
     def staticAnalysis_score(self, url, is_domain = False, use_virus_total = True) -> float:
         # Sistema a punteggio: se viene superata una certa soglia, allora il link viene considerato sospetto
         scores = {}
-        #TODO Analisi di scrittura del link (ancora da implementare)
-        
-        # Analisi certificati
-        # - WARNING: certificato self-signed o emesso da ente gratuito (punteggio 50)
-        # - DANGER: assenza di certificato (punteggio 100) 
-        # Analisi certificati
-        # - WARNING: certificato self-signed o emesso da ente gratuito (punteggio 50)
-        # - DANGER: assenza di certificato (punteggio 100) 
 
         if is_domain:
             scores["certs"] = 0
@@ -435,6 +442,27 @@ class PhishingProxy:
 
     
         
+        # --- (1) Check su LISTE LOCALI (whitelist/blacklist)
+        #     Hanno priorità assoluta sulla cache: se l'admin ha messo in WL, deve passare subito.
+        if self.basic_control.checkWhitelist(domain):
+            self.analyze_logger.debug("[Proxy] dominio in whitelist")
+            return "pass" 
+            
+        if self.basic_control.checkWhitelist(url):
+            self.analyze_logger.debug("[Proxy] URL in whitelist")
+            return "pass"
+
+        if self.basic_control.checkBlacklist(domain):
+            self.analyze_logger.debug("[Proxy] dominio in blacklist")
+            return "block"
+        if self.basic_control.checkBlacklist(url):
+            self.analyze_logger.debug("[Proxy] URL in blacklist")
+            return "block"
+
+        # --- (2) Check su CACHE (Redis)
+        #     Se l'URL è presente, si verifica se è in atto una analisi dinamica
+        #     o se la richiesta va bloccata o lasciata passare.
+        
         decision = self.cache.get(url)
         if decision:
             self.analyze_logger.info(f"[Proxy] decision in cache {decision}")
@@ -443,28 +471,16 @@ class PhishingProxy:
             elif decision == "block":
                 self.analyze_logger.info("[Proxy] URL bloccato da cache")
             return decision
+            
         #     Se il dominio è presente ed è non fidato, si blocca
         decision = self.cache.get(domain)
-        if decision and decision == "block":
-            self.analyze_logger.info("[Proxy] dominio bloccato da cache")
-            return decision
-    
-        # --- Check su whitelist: se l'url o il dominio è presente,
-        #     allora la richiesta può passare tranquillamente
-        if self.basic_control.checkWhitelist(domain):
-            self.analyze_logger.debug("[Proxy] dominio in whitelist")
-            return
-        if self.basic_control.checkWhitelist(url):
-            self.analyze_logger.debug("[Proxy] URL in whitelist")
-            return
-
-        # --- Check su blacklist: se l'url o il dominio è presente, allora la richiesta viene bloccata
-        if self.basic_control.checkBlacklist(domain):
-            self.analyze_logger.debug("[Proxy] dominio in blacklist")
-            return "block"
-        if self.basic_control.checkBlacklist(url):
-            self.analyze_logger.debug("[Proxy] URL in blacklist")
-            return "block"
+        if decision:
+            if decision == "block":
+                self.analyze_logger.info("[Proxy] dominio bloccato da cache")
+                return "block"
+            elif decision == "pass":
+                self.analyze_logger.debug("[Proxy] dominio non malevolo in cache")
+                return "pass"
 
         # --- Effettua analisi statica
         
