@@ -121,12 +121,40 @@ class PhishingProxy:
             self.print_logger.info(msg)
 
     def load(self, loader):
-        load_dotenv()
+        # --- CARICAMENTO ROBUSTO .ENV ---
+        def trova_e_carica_env():
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            # Cerca il .env risalendo le cartelle (massimo 3 livelli)
+            for _ in range(3):
+                env_path = os.path.join(current_dir, ".env")
+                if os.path.exists(env_path):
+                    print(f"[*] Trovato file .env in: {env_path}")
+                    load_dotenv(env_path)
+                    return True
+                current_dir = os.path.dirname(current_dir)
+            
+            # Se non lo trova, prova il caricamento standard
+            print("[*] .env non trovato nelle directory superiori. Provo load_dotenv() standard...")
+            load_dotenv()
+            return False
+
+        trova_e_carica_env()
+        
+        # DEBUG: Verifica caricamento chiavi (mascherate)
+        vt_key = os.getenv('VIRUSTOTAL_APIKEY')
+        CAPE_TOKEN = os.getenv('CAPE_APIKEY')
+        print(f"[*] DEBUG VARS -> VT_KEY: {'OK (' + vt_key[:4] + '...)' if vt_key else 'MISSING'}, CAPE_KEY: {'OK' if CAPE_TOKEN else 'MISSING'}")
+
+        if vt_key:
+             vt_key = vt_key.strip()
+
         # formato del tipo {"posteitaliane.it : "pass", "postltaliane.it" : "block"}
         self.cache = DAO("REDIS_DB_CACHE").get_db_connection()
         self.cache.flushdb()
 
-        CAPE_TOKEN = os.getenv('CAPE_API_KEY')
+        # Correggiamo l'uso della variabile
+        # CAPE_TOKEN è già stato definito sopra, non riassegniamo cape_key inesistente
+        # CAPE_TOKEN = cape_key  <-- Questa riga era l'errore
         CAPE_API_URL = "http://127.0.0.1:8000"
         
         self.cape_engine = CapeControl(CAPE_API_URL, CAPE_TOKEN)
@@ -145,7 +173,7 @@ class PhishingProxy:
         self.basic_control = BasicControl()
         self.certificate_control = CertificateControl()
         self.phishing_army = PhishingArmyControl()
-        self.vt_engine = VirusTotalControl(os.getenv("VIRUSTOTAL_API_KEY"))
+        self.vt_engine = VirusTotalControl(vt_key)
         self.typo_control = TypoDetector(whitelist_domains)
         self.foreign_control = ForeignCharDetector()
 
@@ -318,19 +346,25 @@ class PhishingProxy:
             self.log_print("   ☁️  Controllo VirusTotal in corso...")
             check_virus_total = self.vt_engine.check_url(url)
 
-            if check_virus_total and check_virus_total['detected']:
+            if check_virus_total and check_virus_total.get('error'):
+                if check_virus_total.get('quota_exceeded'):
+                     self.log_print(f"   ⚠️ {check_virus_total['message']}")
+                else:
+                     self.log_print(f"   ⚠️ Errore VirusTotal: {check_virus_total['message']}")
+                scores.pop("virustotal")
+            elif check_virus_total and check_virus_total.get('detected'):
                 self.log_print(f"   ☣️  RILEVATO DA VIRUSTOTAL!")
                 self.log_print(f"      Punteggio: {check_virus_total['malicious_votes']}/{check_virus_total['total_votes']}")
                 scores["virustotal"] += check_virus_total["malicious_votes"] / check_virus_total["total_votes"] * 100
             elif check_virus_total:
                 self.log_print("   ✅ Pulito (VirusTotal).")
             else:
-                self.log_print("   ⚠️ Errore/Quota VirusTotal o Errore API.")
+                self.log_print("   ⚠️ Errore/Quota VirusTotal o Errore API (Nessuna risposta).")
                 scores.pop("virustotal")
             
-            # Pausa obbligatoria per API Free (4 richieste/min)
-            self.log_print("   ⏳ Pausa 15s per quota API VirusTotal...")
-            time.sleep(15)
+            # Non serve più lo sleep forzato di 15s perché gestiamo la quota internamente
+            # self.log_print("   ⏳ Pausa 15s per quota API VirusTotal...")
+            # time.sleep(15)
         
         else:
              # Se non uso VirusTotal (es. risorsa non analizzabile), lo segnalo in debug

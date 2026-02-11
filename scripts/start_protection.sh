@@ -32,11 +32,38 @@ if [ ! -f "$SCRIPT_PATH" ]; then
 fi
 
 # Variabili d'Ambiente
-export VIRUSTOTAL_API_KEY="LA_TUA_CHIAVE"
+# Variabili d'Ambiente: Default statici
 export REDIS_HOST="127.0.0.1"
 export REDIS_PORT="6379"
 export CAPE_API_URL="http://127.0.0.1:8000/apiv2/"
-export CAPE_API_TOKEN="IL_TUO_TOKEN"
+
+# Carica API KEYS (Virustotal/Cape) Il file .env DEVE avere ritorni a capo LF (Unix) e codifica UTF-8
+if [ -f ".env" ]; then
+    echo -e "${YELLOW}[*] Caricamento variabili da .env (fast mode)...${NC}"
+    set -a
+    source .env
+    set +a
+
+    # Debug Checks
+    if [ -n "$VIRUSTOTAL_API_KEY" ]; then
+         echo -e "   -> VT KEY:   ${GREEN}OK (...${VIRUSTOTAL_API_KEY: -5})${NC}"
+    elif [ -n "$VIRUSTOTAL_APIKEY" ]; then
+         echo -e "   -> VT KEY:   ${GREEN}OK (Detected VIRUSTOTAL_APIKEY)${NC}"
+    else
+         echo -e "   -> VT KEY:   ${RED}MANCANTE${NC}"
+    fi
+
+    if [ -n "$CAPE_API_TOKEN" ] || [ -n "$CAPE_API_KEY" ]; then
+         echo -e "   -> CAPE KEY: ${GREEN}OK${NC}"
+    elif [ -n "$CAPE_APIKEY" ]; then
+         echo -e "   -> CAPE KEY: ${GREEN}OK (Detected CAPE_APIKEY)${NC}"
+    else
+         echo -e "   -> CAPE KEY: ${RED}MANCANTE${NC}"
+    fi
+else
+    echo -e "${RED}[!] Errore: File .env non trovato.${NC}"
+    exit 1
+fi
 
 # Avvio Database (Docker) - Ora trova il docker-compose.yml perché siamo nella root
 echo -e "${YELLOW}[*] Verifica dei container database...${NC}"
