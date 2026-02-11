@@ -19,6 +19,14 @@ from functools import lru_cache
 
 from updater import DAO
 
+# --- LOGGING OVERRIDE ---
+# Redirige tutte le chiamate a print() di questo modulo sul file di log 'mitmproxy_Prints.log'
+# configurato in app.py. Questo permette di mantenere pulita la console.
+def print(*args, **kwargs):
+    # Ignora parametri speciali come 'end' o 'file' per forzare la scrittura nel log riga per riga
+    msg = " ".join(map(str, args))
+    logging.getLogger("Prints").info(msg)
+
 
 # Funzioni di utilità condivise 
 def get_clean_domain(url):
@@ -196,7 +204,9 @@ class VirusTotalControl:
         if not url_id: return None
 
         try:
-            response = requests.get(f"{self.base_url}/urls/{url_id}", headers=self.headers)
+            # Bypass SSL verify per evitare errori "unable to get local issuer certificate"
+            requests.packages.urllib3.disable_warnings() 
+            response = requests.get(f"{self.base_url}/urls/{url_id}", headers=self.headers, verify=False)
             if response.status_code == 200:
                 stats = response.json()['data']['attributes']['last_analysis_stats']
                 malicious = stats.get('malicious', 0)
