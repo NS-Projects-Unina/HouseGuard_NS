@@ -10,6 +10,8 @@
 - Gabriel Covone M63001809
 - De Prophetis Claudio M63001815
 
+
+
 ## Cosa è HouseGuard?
 
 HouseGuard è una soluzione progettata per proteggere le reti domestiche dalle minacce informatiche quotidiane. L'obiettivo principale del progetto è tutelare gli utenti meno esperti, spesso più vulnerabili ai rischi della rete, fornendo un sistema di difesa automatizzato e intuitivo.
@@ -135,13 +137,16 @@ Per configurare la macchina virtuale Windows 10 necessaria per l'analisi dinamic
 
 ## Avvio del sistema
 
-### Avvio del container
+### Proxy (APLHA)
 
-Vanno avviati i container con i database REDIS e PostgreSQL.
+1. USARE WSL e avviare Docker Desktop
+2. creare un ambiente virtuale
+3. installare le dipendenze   `pip install -r modulo/requirements.txt`
+4. Avviare il proxy col comando `./scripts/global_start.sh`
+5. Fermare il proxy col comando `./scripts/global_stop.sh`
 
-```
-docker compose up -d
-```
+
+
 
 ### Installazione delle dipendenze
 

@@ -1,7 +1,7 @@
 from mitmproxy import http
 import requests
 import threading
-from staticLinkModule import BasicControl,  CertificateControl, VirusTotalControl, PhishingArmyControl, CapeControl, TypoDetector, ForeignCharDetector
+from staticLinkModule import *
 from updater import DAO, UpdaterThread
 import os
 import sys
@@ -115,6 +115,11 @@ class PhishingProxy:
 
         return config  
 
+    def log_print(self, *args):
+        msg = " ".join(map(str, args))
+        if hasattr(self, "print_logger"):
+            self.print_logger.info(msg)
+
     def load(self, loader):
         load_dotenv()
         # formato del tipo {"posteitaliane.it : "pass", "postltaliane.it" : "block"}
@@ -151,23 +156,57 @@ class PhishingProxy:
 
         # True Per vedere i log di qualsiasi URL,
         # False per i soli URL da analizzare approfonditamente
-        self.debug_mode = False
+        self.debug_mode = True
+        self.force_cape_analysis = False
+ 
 
-        logging.basicConfig()
-        self.logger = logging.getLogger(__name__)
-        self.logger.setLevel(logging.INFO)
+        # --- CONFIGURAZIONE LOGGING DUAL SYSTEM ---
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        logs_dir = os.path.abspath(os.path.join(base_dir, "..", "logs"))
+        try:
+            os.makedirs(logs_dir, exist_ok=True)
+        except Exception as e:
+            pass # Gestione errore permessi
+
+        # 1. Logger Analisi (mitmproxylog_UrlAnalyze.log)
+        self.analyze_logger = logging.getLogger("UrlAnalyze")
+        self.analyze_logger.handlers = [] 
+        self.analyze_logger.propagate = True
+        self.analyze_logger.setLevel(logging.INFO)
         if self.debug_mode:
-            self.logger.setLevel(logging.DEBUG)
+            self.analyze_logger.setLevel(logging.DEBUG)
+            
+        try:
+            analyze_path = os.path.join(logs_dir, "mitmproxylog_UrlAnalyze.log")
+            analyze_handler = logging.FileHandler(analyze_path, mode='a', encoding='utf-8')
+            analyze_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+            self.analyze_logger.addHandler(analyze_handler)
+        except Exception:
+            pass
 
-        self.logger.log(ALERT, "Avvio updaters in corso...")
+        # 2. Logger Stampe (mitmproxy_Prints.log)
+        self.print_logger = logging.getLogger("Prints")
+        self.print_logger.handlers = []
+        self.print_logger.propagate = True
+        self.print_logger.setLevel(logging.INFO)
+        
+        try:
+            print_path = os.path.join(logs_dir, "mitmproxy_Prints.log")
+            print_handler = logging.FileHandler(print_path, mode='a', encoding='utf-8')
+            print_handler.setFormatter(logging.Formatter('%(asctime)s - %(message)s'))
+            self.print_logger.addHandler(print_handler)
+        except Exception:
+            pass
+
+        self.analyze_logger.info("Avvio updaters in corso...")
 
         pishing_army_updater = UpdaterThread(21600, self.phishing_army)
         pishing_army_updater.start()
 
-        self.logger.log(ALERT, "Updaters avviati")
+        self.analyze_logger.info("Updaters avviati")
 
     def blocca_indirizzo(self, port, indirizzo_target):
-        print(f"🔒 Blocco traffico per {indirizzo_target}:{port}...")
+        self.log_print(f"🔒 Blocco traffico per {indirizzo_target}:{port}...")
 
         # --- REGOLA 1: BLOCCO ENTRATA (IN) ---
         rule_in = f"HouseGuard_BLOCK_IN_{indirizzo_target}_{port}"
@@ -199,22 +238,25 @@ class PhishingProxy:
             subprocess.run(["ssh", f"{self.user}@{self.ip}", f"netsh advfirewall firewall delete rule name=\"{rule_out}\""], stderr=subprocess.DEVNULL)
 
             # 2. Applicazione Regole
-            print(f"   -> Scrivendo regola INBOUND...")
+            self.log_print(f"   -> Scrivendo regola INBOUND...")
             subprocess.run(["ssh", f"{self.user}@{self.ip}", cmd_in], check=True)
             
-            print(f"   -> Scrivendo regola OUTBOUND...")
+            self.log_print(f"   -> Scrivendo regola OUTBOUND...")
             subprocess.run(["ssh", f"{self.user}@{self.ip}", cmd_out], check=True)
             
-            print("✅ Blocco attivato con successo.")
+            self.log_print("✅ Blocco attivato con successo.")
 
         except subprocess.CalledProcessError as e:
-            print(f"❌ Errore durante l'applicazione del firewall: {e}")
+            self.log_print(f"❌ Errore durante l'applicazione del firewall: {e}")
 
     def staticAnalysis_score(self, url, is_domain = False, use_virus_total = True) -> float:
         # Sistema a punteggio: se viene superata una certa soglia, allora il link viene considerato sospetto
         scores = {}
         #TODO Analisi di scrittura del link (ancora da implementare)
-
+        
+        # Analisi certificati
+        # - WARNING: certificato self-signed o emesso da ente gratuito (punteggio 50)
+        # - DANGER: assenza di certificato (punteggio 100) 
         # Analisi certificati
         # - WARNING: certificato self-signed o emesso da ente gratuito (punteggio 50)
         # - DANGER: assenza di certificato (punteggio 100) 
@@ -229,23 +271,22 @@ class PhishingProxy:
                 scores.pop("certs")
 
             if certificate_analysis["status"] == "WARNING": 
-                print(certificate_analysis)
-                print("-" * 30)
+                self.log_print(certificate_analysis)
+                self.log_print("-" * 30)
                 scores["certs"] += 50
             elif certificate_analysis["status"] == "DANGER":
-                print(certificate_analysis)
-                print("-" * 30)
+                self.log_print(certificate_analysis)
+                self.log_print("-" * 30)
                 scores["certs"] += 100
-
         # Analisi database scaricabili(PhishingArmy)
         # Blocco istantaneo per ogni presenza rilevata
 
         if is_domain:
             check_phishing_army = self.phishing_army.check_url(url)
-            print("   🎏  Controllo Phishing Army in corso...")
+            self.log_print("   🎏  Controllo Phishing Army in corso...")
             if check_phishing_army:
-                print(f"   🛑 RILEVATO DA PHISHING ARMY!")
-                print(f"      Dominio bloccato: {check_phishing_army['domain_matched']}")
+                self.log_print(f"   🛑 RILEVATO DA PHISHING ARMY!")
+                self.log_print(f"      Dominio bloccato: {check_phishing_army['domain_matched']}")
                 scores["phishingarmy"] = 100
                 return scores
 
@@ -274,22 +315,26 @@ class PhishingProxy:
 
             scores["virustotal"] = 0
 
-            print("   ☁️  Controllo VirusTotal in corso...")
+            self.log_print("   ☁️  Controllo VirusTotal in corso...")
             check_virus_total = self.vt_engine.check_url(url)
 
             if check_virus_total and check_virus_total['detected']:
-                print(f"   ☣️  RILEVATO DA VIRUSTOTAL!")
-                print(f"      Punteggio: {check_virus_total['malicious_votes']}/{check_virus_total['total_votes']}")
+                self.log_print(f"   ☣️  RILEVATO DA VIRUSTOTAL!")
+                self.log_print(f"      Punteggio: {check_virus_total['malicious_votes']}/{check_virus_total['total_votes']}")
                 scores["virustotal"] += check_virus_total["malicious_votes"] / check_virus_total["total_votes"] * 100
             elif check_virus_total:
-                print("   ✅ Pulito (VirusTotal).")
+                self.log_print("   ✅ Pulito (VirusTotal).")
             else:
-                print("   ⚠️ Errore/Quota VirusTotal.")
+                self.log_print("   ⚠️ Errore/Quota VirusTotal o Errore API.")
                 scores.pop("virustotal")
             
             # Pausa obbligatoria per API Free (4 richieste/min)
-            #time.sleep(15)
-            time.sleep(5)
+            self.log_print("   ⏳ Pausa 15s per quota API VirusTotal...")
+            time.sleep(15)
+        
+        else:
+             # Se non uso VirusTotal (es. risorsa non analizzabile), lo segnalo in debug
+             pass 
 
         return scores
 
@@ -351,35 +396,40 @@ class PhishingProxy:
         #     Se l'URL è presente, si verifica se
         #     è in atto una analisi dinamica per l'url corrente
         #     o se la richiesta va bloccata o lasciata passare
+        # Lista di domini che rompono la connessione con MITM (Certificate Pinning)
+        # Questi non dovrebbero nemmeno essere intercettati, ma se lo sono, li lasciamo passare.
+
+    
+        
         decision = self.cache.get(url)
         if decision:
-            self.logger.log(ALERT, f"[Proxy] decision in cache {decision}")
+            self.analyze_logger.info(f"[Proxy] decision in cache {decision}")
             if decision == "processing":
-                self.logger.debug("[Proxy] Analisi dinamica in corso")
+                self.analyze_logger.debug("[Proxy] Analisi dinamica in corso")
             elif decision == "block":
-                self.logger.log(ALERT, "[Proxy] URL bloccato da cache")
+                self.analyze_logger.info("[Proxy] URL bloccato da cache")
             return decision
         #     Se il dominio è presente ed è non fidato, si blocca
         decision = self.cache.get(domain)
         if decision and decision == "block":
-            self.logger.log(ALERT, "[Proxy] dominio bloccato da cache")
+            self.analyze_logger.info("[Proxy] dominio bloccato da cache")
             return decision
     
         # --- Check su whitelist: se l'url o il dominio è presente,
         #     allora la richiesta può passare tranquillamente
         if self.basic_control.checkWhitelist(domain):
-            self.logger.debug("[Proxy] dominio in whitelist")
+            self.analyze_logger.debug("[Proxy] dominio in whitelist")
             return
         if self.basic_control.checkWhitelist(url):
-            self.logger.debug("[Proxy] URL in whitelist")
+            self.analyze_logger.debug("[Proxy] URL in whitelist")
             return
 
         # --- Check su blacklist: se l'url o il dominio è presente, allora la richiesta viene bloccata
         if self.basic_control.checkBlacklist(domain):
-            self.logger.debug("[Proxy] dominio in blacklist")
+            self.analyze_logger.debug("[Proxy] dominio in blacklist")
             return "block"
         if self.basic_control.checkBlacklist(url):
-            self.logger.debug("[Proxy] URL in blacklist")
+            self.analyze_logger.debug("[Proxy] URL in blacklist")
             return "block"
 
         # --- Effettua analisi statica
@@ -390,40 +440,42 @@ class PhishingProxy:
             scores = self.staticAnalysis_score(domain, is_domain = True, use_virus_total = deep_analyze)
             domainDecision = self.staticAnalysis_detection(scores)
 
-            self.logger.log(ALERT, f"[Proxy] Analisi statica del dominio completata. Scores: {scores}, decisione: {domainDecision}")
+            self.analyze_logger.info(f"[Proxy] Analisi statica del dominio completata. Scores: {scores}, decisione: {domainDecision}")
 
             #    Se il dominio è non fidato si blocca, altrimenti si continua
-            if domainDecision == "pass":
+            #    Se il dominio è non fidato si blocca, altrimenti si continua
+            if not self.force_cape_analysis and domainDecision == "pass":
                 self.cache.set(domain, "pass")
-                self.logger.debug("[Proxy] dominio non malevolo messo in cache")
+                self.analyze_logger.debug("[Proxy] dominio non malevolo messo in cache")
                 
-            elif domainDecision == "block":
+            elif not self.force_cape_analysis and domainDecision == "block":
                 self.cache.set(domain, "block")
-                self.logger.log(ALERT, "[Proxy] dominio bloccato e messo in cache")
+                self.analyze_logger.info("[Proxy] dominio bloccato e messo in cache")
                 return "block"
         
         # --- Effettua analisi statica dell'URL
         scores = self.staticAnalysis_score(url, is_domain = False, use_virus_total = deep_analyze and not is_root_path)
         decision = self.staticAnalysis_detection(scores, domainDecision)
 
-        self.logger.log(ALERT, f"[Proxy] Analisi statica dell'URL completata. Scores: {scores}, decisione: {decision}")
+        self.analyze_logger.info(f"[Proxy] Analisi statica dell'URL completata. Scores: {scores}, decisione: {decision}")
 
-        if decision == "pass":
+        if not self.force_cape_analysis and decision == "pass":
             self.cache.set(url, "pass")
-            self.logger.debug("[Proxy] URL non malevolo messo in cache")
+            self.analyze_logger.debug("[Proxy] URL non malevolo messo in cache")
             return "pass"
-        elif decision == "block":
+        elif not self.force_cape_analysis and decision == "block":
             self.cache.set(url, "block")
-            self.logger.log(ALERT, "[Proxy] URL bloccato e messo in cache")
+            self.analyze_logger.info("[Proxy] URL bloccato e messo in cache")
             return "block"
         
-        self.logger.debug("[Proxy] URL sospetto, inizio analisi dinamica...")
+        self.analyze_logger.debug("[Proxy] URL sospetto, inizio analisi dinamica...")
 
         # Si arriva qui se l'URL è sospetto
         # Si analizza l'URL solo se corrisponde ad una delle risorse specificate
         if deep_analyze:
             self.cache.set(url, "processing")
-            t = threading.Thread(target=dynamic_analysis, args=(url,domain,self.cache))
+            # CORRETTO: target=self.dynamic_analysis per usare il metodo di istanza
+            t = threading.Thread(target=self.dynamic_analysis, args=(url,domain,self.cache))
             t.start()
 
             return "processing"
@@ -436,6 +488,11 @@ class PhishingProxy:
         url = flow.request.pretty_url
         domain = flow.request.pretty_host
         path = flow.request.path
+
+        if "virustotal.com" in domain:
+            self.log_print(f"   ☁️  Richiesta verso VirusTotal intercettata: {url}")
+            self.analyze_logger.info(f"[Proxy] Richiesta verso VirusTotal intercettata: {url}")
+            return
 
         # --- Verifica in base al tipo di contenuto ricevuto
             # se serve una analisi approfondita.
@@ -452,7 +509,7 @@ class PhishingProxy:
                     if content_type in response_content_type:
                         deep_analyze = True
         
-        # --- Verifica se il path è la radice del dominio
+        # Verifica se è root path
         isRootPath = False
         actualPath = ""
         if path:
@@ -469,12 +526,12 @@ class PhishingProxy:
         
         if not self.debug_mode:
             if deep_analyze:
-                self.logger.setLevel(logging.DEBUG)
-                self.logger.info(logString)
+                self.analyze_logger.setLevel(logging.DEBUG)
+                self.analyze_logger.info(logString)
             else:
-                self.logger.setLevel(logging.INFO)
+                self.analyze_logger.setLevel(logging.INFO)
         else:
-            self.logger.debug(logString)
+            self.analyze_logger.debug(logString)
 
         decision = self.process_response(url, domain, is_root_path = isRootPath, deep_analyze=deep_analyze)
 
@@ -484,76 +541,73 @@ class PhishingProxy:
             flow.response = self.buildBlockResponse(url)
             indirizzo = flow.server_conn.peername[0]
             port = flow.server_conn.peername[1]
-            #self.blocca_indirizzo(port, indirizzo)
+            self.blocca_indirizzo(port, indirizzo)
         elif decision == "pass":
             return
-        else:
-            self.logger.error("[Proxy] Ricevuta decisione inattesa")
         
         
     # --- Analisi dinamica con CAPE
     def dynamic_analysis(self, url, domain, cache):
         decision = "pass"
-        score = 0
-
         time.sleep(5)
-        print("   📦 Invio a CAPE Sandbox Locale...")
+        self.log_print("   📦 Invio a CAPE Sandbox Locale...")
     
         # 1. Invio
-        task_id = cape_engine.submit_url(url)
+        task_id = self.cape_engine.submit_url(url)
         
         if task_id:
-            print(f"   ✅ URL inviato. Task ID: {task_id}")
+            self.log_print(f"   ✅ URL inviato. Task ID: {task_id}")
             
             # 2. Attesa attiva del risultato
-            report = cape_engine.wait_for_report(task_id)
+            report = self.cape_engine.wait_for_report(task_id)
             
             if report:
                 # 3. Analisi del Report JSON
                 # CAPE assegna un 'malscore' da 0.0 a 10.0
                 if report.get("error"):
-                    print(f"   ⚠️ Impossibile determinare malignità (Errore CAPE: {report.get('reason')})")
-                    print("   ➡️ Considero l'URL sospetto per precauzione (o lo ignoro, a tua scelta).")
+                    self.log_print(f"   ⚠️ Impossibile determinare malignità (Errore CAPE: {report.get('reason')})")
+                    self.log_print("   ➡️ Considero l'URL sospetto per precauzione (o lo ignoro, a tua scelta).")
                 else:
                     
                     malscore = report.get('malscore', 0)
                     
-                    print(f"\n   📊 RISULTATO ANALISI DINAMICA:")
-                    print(f"      Punteggio Malignità: {malscore}/10.0")
+                    self.log_print(f"\n   📊 RISULTATO ANALISI DINAMICA:")
+                    self.log_print(f"      Punteggio Malignità: {malscore}/10.0")
                     
                     # Estrazione firme (comportamenti sospetti)
                     signatures = report.get('signatures', [])
                     if signatures:
-                        print("      🚩 Comportamenti sospetti rilevati:")
+                        self.log_print("      🚩 Comportamenti sospetti rilevati:")
                         for sig in signatures:
                             # Stampa nome e severità della firma
                             sig_name = sig.get('name')
                             sig_sev = sig.get('severity', 1)
-                            print(f"         - [{sig_sev}/5] {sig_name}")
+                            self.log_print(f"         - [{sig_sev}/5] {sig_name}")
                             decision = "block"
                     else:
-                        print("      ✅ Nessun comportamento sospetto rilevato.")
+                        self.log_print("      ✅ Nessun comportamento sospetto rilevato.")
                         decision = "pass"
 
                 # Logica di blocco basata sul punteggio CAPE
                 if malscore >= 5.0:
-                    print(f"   🛑 BLOCCO: Punteggio CAPE troppo alto!")
+                    self.log_print(f"   🛑 BLOCCO: Punteggio CAPE troppo alto!")
                     decision = "block"
                 else:
-                    print(f"   ✅ URL considerato sicuro da CAPE.")
+                    self.log_print(f"   ✅ URL considerato sicuro da CAPE.")
                     decision = "pass"
 
             else:
-                print("   ⚠️ Impossibile recuperare il report (Timeout o Errore).")
+                self.log_print("   ⚠️ Impossibile recuperare il report (Timeout o Errore).")
 
                 
         else:
-            print("   ❌ Errore nell'invio a CAPE.")
+            self.log_print("   ❌ Errore nell'invio a CAPE.")
 
-        print("-" * 40)
-        
+        self.log_print("-" * 40)
+
+
         # Si salva la decisione di CAPE nella cache
-        self.logger.log(ALERT, f"[Proxy] Analisi dinamica completata. Score {score}, decisione: {decision}")
+        self.analyze_logger.info(f"[Proxy] Analisi dinamica completata. Decisione: {decision}")
         cache.set(url, decision)
         return
 

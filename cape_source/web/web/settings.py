@@ -104,7 +104,16 @@ NETWORK_PROC_MAP = pro_cfg.network_proc_map.enabled
 DEBUG = True
 
 # Database settings. We don't need it.
-DATABASES = {"default": {"ENGINE": "django.db.backends.sqlite3", "NAME": "siteauth.sqlite"}}
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': 'cape',
+        'USER': 'cape',
+        'PASSWORD': 'cape',
+        'HOST': 'host.docker.internal',
+        'PORT': '5432',
+    }
+}
 
 SITE_ID = 1
 

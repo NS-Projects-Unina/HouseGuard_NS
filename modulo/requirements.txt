@@ -3,4 +3,5 @@ python-dotenv
 redis
 schedule
 flask
+mitmproxy
 textdistance
