@@ -138,11 +138,16 @@ class PhishingProxy:
         self.user = self.config_data['user']
         self.ip = self.config_data['ip']
 
+        # 
+        whitelist_domains = ["google.com", "microsoft.com", "posteitaliane.it"]
+
         # Inizializzazioni delle classi di controllo statico come attributi di istanza
         self.basic_control = BasicControl()
         self.certificate_control = CertificateControl()
         self.phishing_army = PhishingArmyControl()
         self.vt_engine = VirusTotalControl(os.getenv("VIRUSTOTAL_API_KEY"))
+        self.typo_control = TypoDetector(whitelist_domains)
+        self.foreign_control = ForeignCharDetector()
 
         self.lastUpdate = time.time()
 
@@ -246,7 +251,7 @@ class PhishingProxy:
 
     def staticAnalysis_score(self, url, is_domain = False, use_virus_total = True) -> float:
         # Sistema a punteggio: se viene superata una certa soglia, allora il link viene considerato sospetto
-        score = 0
+        scores = {}
         #TODO Analisi di scrittura del link (ancora da implementare)
         
         # Analisi certificati
@@ -255,33 +260,27 @@ class PhishingProxy:
         # Analisi certificati
         # - WARNING: certificato self-signed o emesso da ente gratuito (punteggio 50)
         # - DANGER: assenza di certificato (punteggio 100) 
-        try:
-            target_host = url
-            if not is_domain:
-                # Estrae solo il dominio dall'URL per evitare errori SSL con path lunghi
-                target_host = get_clean_domain(url) 
-                # Se get_clean_domain fallisce o ritorna stringa vuota, fallback su url (o gestisci errore)
-                if not target_host: target_host = url
 
-            certificate_analysis = self.certificate_control.analyze(target_host)
-        except Exception as e:
-            self.log_print(f"Errore durante l'analisi del certificato per {target_host}: {e}")
-            certificate_analysis = {"status": "UNKNOWN"}
+        if is_domain:
+            scores["certs"] = 0
+            try:
+                certificate_analysis = self.certificate_control.analyze(url)
+            except Exception as e:
+                print(f"Errore durante l'analisi del certificato per {url}: {e}")
+                certificate_analysis = {"status": "UNKNOWN"}
+                scores.pop("certs")
 
-        # --------------- COMMENTO - TODO
-        # --------------- è da modificare il controllo dei certificati
-        # --------------- consiglio di mettere WARNING per free-tier e DANGER per self-signed
+            if certificate_analysis["status"] == "WARNING": 
+                print(certificate_analysis)
+                print("-" * 30)
+                scores["certs"] += 50
+            elif certificate_analysis["status"] == "DANGER":
+                print(certificate_analysis)
+                print("-" * 30)
+                scores["certs"] += 100
 
-        if certificate_analysis["status"] == "WARNING": 
-            self.log_print(certificate_analysis)
-            self.log_print("-" * 30)
-            score += 50
-        elif certificate_analysis["status"] == "DANGER":
-            self.log_print(certificate_analysis)
-            self.log_print("-" * 30)
-            score += 100
-        # Analisi database scaricabili(PhishingArmy, PhishTank implementati al momento)
-        # Blocco istantaneo (score inf) per ogni presenza rilevata
+        # Analisi database scaricabili(PhishingArmy)
+        # Blocco istantaneo per ogni presenza rilevata
 
         if is_domain:
             check_phishing_army = self.phishing_army.check_url(url)
@@ -289,8 +288,24 @@ class PhishingProxy:
             if check_phishing_army:
                 self.log_print(f"   🛑 RILEVATO DA PHISHING ARMY!")
                 self.log_print(f"      Dominio bloccato: {check_phishing_army['domain_matched']}")
-                return float('inf')
+                scores["phishingarmy"] = 100
+                return scores
 
+        # Analisi Typosquatting
+        # 0 se è dominio legittimo, altrimenti edit distance normalizzata da 0 a 100 
+
+        if is_domain:
+            typo_score = self.typo_control.get_typo_score(url)
+            print("   🎏  Controllo typosquatting in corso...")
+            scores["typo"] = typo_score[0]
+        
+        # Analisi caratteri stranieri
+        # 0 se non ce ne sono, altrimenti conteggio normalizzato da 0 a 100
+
+        if is_domain:
+            foreign_score = self.foreign_control.analyze_domain(url)
+            print("   🎏  Controllo caratteri stranieri in corso...")
+            scores["foreign"] = foreign_score
         
         # Analisi effettuata da VirusTotal
         # VirusTotal effettua un rapporto tra voti maliziosi e voti totali
@@ -299,41 +314,81 @@ class PhishingProxy:
         
         if use_virus_total:
 
+            scores["virustotal"] = 0
+
             self.log_print("   ☁️  Controllo VirusTotal in corso...")
             check_virus_total = self.vt_engine.check_url(url)
 
             if check_virus_total and check_virus_total['detected']:
                 self.log_print(f"   ☣️  RILEVATO DA VIRUSTOTAL!")
                 self.log_print(f"      Punteggio: {check_virus_total['malicious_votes']}/{check_virus_total['total_votes']}")
-                score += check_virus_total["malicious_votes"] / check_virus_total["total_votes"] * 100
+                scores["virustotal"] += check_virus_total["malicious_votes"] / check_virus_total["total_votes"] * 100
             elif check_virus_total:
                 self.log_print("   ✅ Pulito (VirusTotal).")
             else:
                 self.log_print("   ⚠️ Errore/Quota VirusTotal o Errore API.")
+                scores.pop("virustotal")
             
             # Pausa obbligatoria per API Free (4 richieste/min)
-            self.log_print("   ⏳ Pausa 15s per quota API VirusTotal...")
-            time.sleep(15)
+            # self.log_print("   ⏳ Pausa 15s per quota API VirusTotal...")
+            # time.sleep(15)
         
         else:
              # Se non uso VirusTotal (es. risorsa non analizzabile), lo segnalo in debug
              pass 
 
-        return score
+        return scores
 
-    # - minore di una soglia di minimo -> lascio passare
-    # - compreso tra una soglia e l'altra -> lascio decidere a cape
-    # - supera una soglia di massimo -> blocco a prescindere, e viene aggiunto in cache
-    def staticAnalysis_detection(self, score) -> PhishingValue:
-        ## DECISIONE SU SOGLIE
+    # - se fidato -> lascio passare
+    # - se sospetto -> lascio decidere a cape
+    # - se sicuro phishing -> blocco a prescindere, e viene aggiunto in cache
+    def staticAnalysis_detection(self, scores, domainDecision = None) -> PhishingValue:
 
-        decision = PhishingValue.SUSPECT
+        decision = "suspect"
 
-        if score > 60:
-            decision = PhishingValue.PHISHING
-        elif score <= 5:
-            decision = PhishingValue.TRUSTED
+        # Se è un URL si considera virustotal oltre alla decisione sul dominio
+        if domainDecision:
+            if "virustotal" in scores:
+                if domainDecision == "block" or domainDecision == "suspect" and scores["virustotal"] > 10:
+                    return domainDecision
+                else:
+                    if scores["virustotal"] <= 6:
+                        decision = "pass"
+                        return decision
+            else:
+                decision = "pass"
+                return decision
         
+        # Blocco immediato se Phishing Army o certificato self-signed
+        if "phishingarmy" in scores or scores["certs"] == 100:
+            decision = "block"
+            return decision
+
+        # Virustotal: tipicamente > 12 malevolo, ma ha falsi positivi
+        # si riducono falsi positivi se il certificato non è a pagamento o se ci sono caratteri stranieri
+        if "virustotal" in scores:
+            if scores["virustotal"] > 18 or (scores["virustotal"] >= 10 and (scores["foreign"] != 0 or scores["certs"] != 0)):
+                decision = "block"
+                return decision
+
+        # Analisi Typosquatting: tipicamente malevolo > 75 in poi, ma può avere falsi positivi
+        # si riducono falsi positivi se il certificato non è a pagamento o se ci sono caratteri stranieri
+        if scores["typo"] >= 70 and (scores["foreign"] != 0 or scores["certs"] != 0):
+            decision = "block"
+            return decision
+        
+        # Virustotal: tipicamente < 6 malevolo, ma ha falsi negativi per siti mai analizzati
+        # si riducono falsi negativi se il certificato è a pagamento e se non c'é typosquatting
+        if  "virustotal" in scores:
+            if scores["virustotal"] <= 6 and scores["typo"] < 10 and scores["certs"] == 0:
+                decision = "pass"
+                return decision
+        else:
+            # Nel caso in cui non serve analisi approfondita si ha un approccio più lasco
+            if scores["typo"] < 5 and scores["certs"] == 0:
+                decision = "pass"
+                return decision
+    
         return decision
 
     def process_response(self, url, domain, is_root_path = False, deep_analyze = False) -> str:
@@ -380,36 +435,36 @@ class PhishingProxy:
 
         # --- Effettua analisi statica
         
-        decision = self.cache.get(domain)
-        if not decision:
+        domainDecision = self.cache.get(domain)
+        if not domainDecision:
             # --- Effettua analisi statica del dominio
-            score = self.staticAnalysis_score(domain, is_domain = True, use_virus_total = deep_analyze)
-            decision = self.staticAnalysis_detection(score)
+            scores = self.staticAnalysis_score(domain, is_domain = True, use_virus_total = deep_analyze)
+            domainDecision = self.staticAnalysis_detection(scores)
 
             self.analyze_logger.info(f"[Proxy] Analisi statica del dominio completata. Score {score}, decisione: {decision}")
 
             #    Se il dominio è non fidato si blocca, altrimenti si continua
             #    Se il dominio è non fidato si blocca, altrimenti si continua
-            if not self.force_cape_analysis and decision == PhishingValue.TRUSTED:
+            if not self.force_cape_analysis and domainDecision == "pass":
                 self.cache.set(domain, "pass")
                 self.analyze_logger.debug("[Proxy] dominio non malevolo messo in cache")
                 
-            elif not self.force_cape_analysis and decision == PhishingValue.PHISHING:
+            elif not self.force_cape_analysis and domainDecision == "block":
                 self.cache.set(domain, "block")
                 self.analyze_logger.info("[Proxy] dominio bloccato e messo in cache")
                 return "block"
         
         # --- Effettua analisi statica dell'URL
-        score = self.staticAnalysis_score(url, is_domain = False, use_virus_total = deep_analyze and not is_root_path)
-        decision = self.staticAnalysis_detection(score)
+        scores = self.staticAnalysis_score(url, is_domain = False, use_virus_total = deep_analyze and not is_root_path)
+        decision = self.staticAnalysis_detection(scores, domainDecision)
 
         self.analyze_logger.info(f"[Proxy] Analisi statica dell'URL completata. Score {score}, decisione: {decision}")
 
-        if not self.force_cape_analysis and decision == PhishingValue.TRUSTED:
+        if not self.force_cape_analysis and decision == "pass":
             self.cache.set(url, "pass")
             self.analyze_logger.debug("[Proxy] URL non malevolo messo in cache")
             return "pass"
-        elif not self.force_cape_analysis and decision == PhishingValue.PHISHING:
+        elif not self.force_cape_analysis and decision == "block":
             self.cache.set(url, "block")
             self.analyze_logger.info("[Proxy] URL bloccato e messo in cache")
             return "block"
@@ -487,15 +542,14 @@ class PhishingProxy:
             flow.response = self.buildBlockResponse(url)
             indirizzo = flow.server_conn.peername[0]
             port = flow.server_conn.peername[1]
-            self.blocca_indirizzo(port, indirizzo)
+            #self.blocca_indirizzo(port, indirizzo)
         elif decision == "pass":
             return
         
         
     # --- Analisi dinamica con CAPE
     def dynamic_analysis(self, url, domain, cache):
-        decision = "pass"
-        time.sleep(5)
+        score = 0
         self.log_print("   📦 Invio a CAPE Sandbox Locale...")
     
         # 1. Invio
