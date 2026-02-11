@@ -38,6 +38,7 @@ export REDIS_PORT="6379"
 export CAPE_API_URL="http://127.0.0.1:8000/apiv2/"
 
 # Carica API KEYS (Virustotal/Cape) Il file .env DEVE avere ritorni a capo LF (Unix) e codifica UTF-8
+
 if [ -f ".env" ]; then
     echo -e "${YELLOW}[*] Caricamento variabili da .env (fast mode)...${NC}"
     set -a
@@ -61,9 +62,9 @@ if [ -f ".env" ]; then
          echo -e "   -> CAPE KEY: ${RED}MANCANTE${NC}"
     fi
 else
-    echo -e "${RED}[!] Errore: File .env non trovato.${NC}"
-    exit 1
+    echo -e "${YELLOW}[!] Avviso: File .env non trovato. Verranno utilizzate le variabili d'ambiente di sistema.${NC}"
 fi
+
 
 # Avvio Database (Docker) - Ora trova il docker-compose.yml perché siamo nella root
 echo -e "${YELLOW}[*] Verifica dei container database...${NC}"
