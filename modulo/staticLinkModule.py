@@ -12,6 +12,10 @@ import re
 import idna
 import unicodedata
 import logging
+import textdistance
+from collections import defaultdict
+from functools import lru_cache
+
 
 from updater import DAO
 
@@ -375,5 +379,113 @@ class ForeignCharDetector:
         score = (foreign_count / valid_char_count) * 100.0
         return round(score, 2)
 
+class TypoDetector:
+    def __init__(self, whitelist_domains):
+        
+        # 1. SET per lookup istantaneo
+        self.whitelist_set = set(whitelist_domains)
+        
+        # 2. INDICE PER LUNGHEZZA per Typo Check
+        self.len_index = defaultdict(list)
+        
+        # 3. SET DEI CORE per Combo Check
+        self.whitelist_cores = set()
 
+        # PRE-PROCESSING
+        for domain in whitelist_domains:
+            core = self._extract_core(domain)
+            
+            # Salviamo il core per i controlli successivi
+            if len(core) > 2: # Ignoriamo domini cortissimi
+                self.len_index[len(core)].append(core)
+                self.whitelist_cores.add(core)
+
+        # Mappa Leet Speak (Numeri -> Lettere)
+        self.leet_map = str.maketrans({
+            '0': 'o', '1': 'l', '3': 'e', '4': 'a', '5': 's', 
+            '6': 'b', '7': 't', '8': 'b', '$': 's', '@': 'a'
+        })
+        
+        # Soglia minima per considerare qualcosa un "Typo" (Jaro-Winkler)
+        self.min_similarity_threshold = 0.85
+
+    def _extract_core(self, domain):
+        #Estrae la parte centrale del dominio
+        clean = domain.replace("www.", "").lower()
+        if "." in clean:
+            return clean.split(".")[0] 
+        return clean
+
+    # 4. CACHE MEMORY
+    # Memorizza gli ultimi 2048 risultati. 
+    @lru_cache(maxsize=2048)
+    def get_typo_score(self, visited_domain):
+        """
+        Restituisce una tupla: (Score, Target_Imitato).
+        Score: 0.0 (Sicuro) -> 100.0 (Pericolo).
+        Target_Imitato: Nome del sito copiato (o None).
+        """
+        
+        # A. Controllo Esatto
+        if visited_domain in self.whitelist_set:
+            return 0.0, None
+
+        visited_core = self._extract_core(visited_domain)
+        
+        # B. Controllo Core Esatto
+        if visited_core in self.whitelist_cores:
+            return 0.0, None
+
+        v_len = len(visited_core)
+
+        # C. CONTROLLO COMBO-SQUATTING
+        # Verifica se un marchio è contenuto interamente nel dominio visitato.
+        if v_len > 4: # Evitiamo falsi positivi su stringhe corte
+            for target_core in self.whitelist_cores:
+                # Ignoriamo target troppo corti per evitare falsi allarmi
+                if len(target_core) < 4: 
+                    continue
+                
+                
+                if target_core in visited_core:
+                    # Rischio massimo: stanno usando il nome esatto del brand
+                    return 100.0, target_core
+
+        # D. CONTROLLO TYPOSQUATTING (Distanza Jaro-Winkler)
+        
+        # 1. Selezione Candidati (Length Pruning a +/- 2)
+        candidates = []
+        min_len = max(1, v_len - 2)
+        max_len = v_len + 2
+        
+        for length in range(min_len, max_len + 1):
+            if length in self.len_index:
+                candidates.extend(self.len_index[length])
+        
+        if not candidates:
+            return 0.0, None
+
+        # 2. Normalizzazione Leet Speak
+        visited_norm = visited_core.translate(self.leet_map)
+
+        # 3. Calcolo Distanza
+        max_similarity = 0.0
+        best_target_match = None
+
+        for target_core in candidates:
+            score = textdistance.jaro_winkler(visited_norm, target_core)
+            
+            if score > max_similarity:
+                max_similarity = score
+                best_target_match = target_core
+                
+                # Exit Early: Se è quasi identico, inutile continuare
+                if max_similarity > 0.98:
+                    break
+
+        # 4. Calcolo Finale Score
+        if max_similarity < self.min_similarity_threshold:
+            return 0.0, None
+        
+        return round(max_similarity * 100, 2), best_target_match
 
