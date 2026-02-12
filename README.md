@@ -29,7 +29,9 @@ HouseGuard_NetworkSecurity è il modulo dedicato alla protezione del perimetro d
     <img src="images/Funzionamento/HouseGuard_Schema.png">
 </p>
 
-### MITMProxy `modulo`
+
+### [MITMProxy](https://mitmproxy.org/) `modulo/`
+
 
 Mitmproxy è il primo controllore del traffico : intercetta e valuta il traffico HTTP e HTTPS tramite l'utilizzo di un'estensione personalizzata.
 L'analisi del traffico viene effettuata a vari livelli:
@@ -46,102 +48,10 @@ L'analisi del traffico viene effettuata a vari livelli:
 2. Il sito è considerato sospetto: il traffico viene inoltrato a CAPE per effettuare analisi più approfondite
 3. Il sito è considerato pericoloso: il traffico viene bloccato.
 
-<details>
-<summary><b>flusso decisionale schematizzato</b></summary>
+[**flusso decisionale schematizzato**](images/Funzionamento/controlchain.md)
 
-(Richiesta HTTP Intercettata)
-|
-v
+[**Albero di decisione analisi statica**](images/Funzionamento/analisi_statica.png)
 
-
-
-+-----------------------------------------------------------------------------------------+
-|                                  1. LISTE DI CONTROLLO                                  |
-|  (File Locali)                                                                          |
-|                                                                                         |
-|  [Whitelist?] -------(Si)--------> [Decisione: PASS] ---------------------------------->| (Fine)
-|        |                                                                                |
-|       (No)                                                                              |
-|        v                                                                                |
-|  [Blacklist?] -------(Si)--------> [Decisione: BLOCK] --------------------------------->| (Fine)
-+--------+--------------------------------------------------------------------------------+
-|
-v
-+-----------------------------------------------------------------------------------------+
-|                                    2. CONTROLLO CACHE                                   |
-|  (Redis)                                                                                |
-|                                                                                         |
-|  [URL in Cache?] ----(Si)----> [Decisione: PASS / BLOCK / PROCESSING] ----------------->| (Fine)
-|        |                                                                                |
-|       (No)                                                                              |
-|        v                                                                                |
-|  [Dominio in Cache?] --(Si & Block)--> [Decisione: BLOCK] ----------------------------->| (Fine)
-|        |                                                                                |
-|       (No/Pass)                                                                         |
-+--------+--------------------------------------------------------------------------------+
-|
-v
-+-----------------------------------------------------------------------------------------+
-|                            3. ANALISI STATICA (Albero di decisione)                     |
-|                                                                                         |
-|  A. Analisi DOMINIO:                                                                    |
-|     1. Gestione Certificati (Self-signed? Free CA? Assente?)                            |
-|     2. Phishing Army (Database locale) --> Se Trovato: BLOCK Immediato                  |
-|     3. Typosquatting (Distanza da domini legittimi white-listed)                        |
-|     4. Caratteri Stranieri (Omografi)                                                   |
-|     4. VirusTotal API (Se DeepAnalyze=True)                                             |
-|                                                                                         |
-|     [Decisione Dominio] --(BLOCK)--> [Cache Dominio: BLOCK] --------------------------->| (Block)
-|            |                                                                            |
-|          (Pass o Suspect)                                                               |
-|            v                                                                            |
-|  B. Analisi URL Completo:                                                               |
-|     1. VirusTotal API (Se DeepAnalyze=True)                                             |
-|        [ Check Quota: 4/min, 500/day ]                                                  |
-|        - Se Quota OK: Richiesta API                                                     |
-|        - Se Quota KO: Skip (Warning)                                                    |
-|                                                                                         |
-|      [Decisione URL]                                                                    |
-|            |                                                                            |
-|            +---------------(BLOCK)--> [Cache URL: BLOCK] ------------------------------>| (Block)
-|            |                                                                            |
-|            +--------------------------------------------------------------------------->| (Pass)
-|            |                                                                            |
-|            v                                                                            |
-|     ("Suspect")                                                       |
-+--------+--------------------------------------------------------------------------------+
-|
-v
-+-----------------------------------------------------------------------------------------+
-|                              4. ANALISI DINAMICA (Sandbox)                              |
-|                                                                                         |
-|  [Deep Analyze Richiesto?] --(No)--> [Decisione: PASS (Low Confidence)] --------------->| (Pass)
-|            |                                                                            |
-|           (Si)                                                                          |
-|            v                                                                            |
-|  [Invio a CAPE Sandbox]                                                                 |
-|            |                                                                            |
-|  [Stato: PROCESSING] ------------------------------------------------------------------>| (Wait Page)
-|            |                                                                            |
-|      (Thread Separato)                                                                  |
-|            v                                                                            |
-|      [Attesa Report CAPE]                                                               |
-|            |                                                                            |
-|      [Malscore > 5.0?] --(Si)--> [Update Cache: BLOCK] ----> [Firewall Windows BLOCK]   |
-|            |                                                                            |
-|           (No)                                                                          |
-|            +-----------> [Update Cache: PASS]                                           |
-+-----------------------------------------------------------------------------------------+
-
-</details>
-
-<details>
-<summary><b>Albero di decisione analisi statica</b></summary>
-<p align="center" width="100%">
-    <img width="80%" src="images/Funzionamento/analisi_statica.png">
-</p>
-
-</details>
 #### Analisi statica `modulo/staticLinkModule.py`
 
 Questo modulo esegue un'analisi preliminare dell'URL senza visitarlo direttamente, permettendo una valutazione rapida della minaccia. I suoi componenti principali includono:
@@ -169,7 +79,7 @@ L'estensione `app.py` rappresenta il core logico dell'integrazione con Mitmproxy
 - **Comunicazione Inter-Modulo**: Funge da ponte tra il proxy e il sistema di difesa attiva (Firewall), segnalando gli IP malevoli da isolare a livello di rete.
 
 
-### [CAPE (Analisi Dinamica)](https://github.com/kevoreilly/CAPEv2)
+### [CAPE (Analisi Dinamica)](https://github.com/kevoreilly/CAPEv2) `cape_source`
 
 
 CAPE è una sandbox open-source per l'analisi di file e URL sospetti in maniera approfondita, tramite l'utilizzo di uno snapshot di una macchina virtuale Windows. Questo per garantire che la sandbox sia sempre nello stesso stato.
@@ -274,7 +184,7 @@ Eseguire questi passaggi nell'ambiente WSL per configurare l'engine di analisi d
    ```
 2. **Macchina Virtuale (Vittima)**:
    - **Download**: Scarica l'immagine disco `win10_vittima.qcow2` da [questo link](https://drive.google.com/file/d/1lFntYoGwtzFhvNu6kWv2nh68UyAX-J4l/view?usp=sharing) e posizionala nella directory di default di Libvirt 
-
+   
    ```bash
    sudo cp win10_vittima.qcow2 /var/lib/libvirt/images/
    ```
@@ -398,4 +308,3 @@ I componenti di CAPE devono essere eseguiti in terminali separati (o tramite un 
    cd ~/HouseGuard_NS/cape_source && source venv/bin/activate
    ./guardian.sh
    ```
-
