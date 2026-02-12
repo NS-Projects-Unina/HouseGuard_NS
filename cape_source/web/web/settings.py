@@ -171,7 +171,7 @@ STATIC_ROOT = ""
 STATIC_URL = "/static/"
 
 # Additional locations of static files
-STATICFILES_DIRS = (os.path.join(Path.cwd(), "static"),)
+STATICFILES_DIRS = (os.path.join(BASE_DIR, "static"),)
 
 # List of finder classes that know how to find static files in
 # various locations.

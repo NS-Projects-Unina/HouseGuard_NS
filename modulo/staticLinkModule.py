@@ -116,7 +116,7 @@ class CertificateControl:
             except ssl.SSLCertVerificationError as e:
                 # Se fallisce la verifica, non è detto che sia un attacco, potrebbe mancare la root CA locale.
                 # Lo classifichiamo come WARNING invece di errore fatale.
-                return {"status": "WARNING", "reason": f"Verifica SSL fallita (possibile self-signed o root mancante): {e}"}
+                return {"status": "DANGER", "reason": f"Verifica SSL fallita (possibile self-signed o root mancante): {e}"}
             except Exception as e:
                 return {"status": "ERROR", "reason": str(e)}
 
@@ -192,6 +192,18 @@ class VirusTotalControl:
         self.api_key = api_key
         self.base_url = "https://www.virustotal.com/api/v3"
         self.headers = {"x-apikey": self.api_key}
+        
+        # Gestione Quota (4 richieste/minuto, 500 richieste/giorno)
+        self.request_count = 0
+        self.last_reset_time = time.time()
+        self.QUOTA_LIMIT = 4
+        self.QUOTA_WINDOW = 60 # secondi
+        
+        # Quota giornaliera
+        self.daily_count = 0
+        self.daily_reset_time = time.time()
+        self.DAILY_LIMIT = 500
+        self.DAILY_WINDOW = 86400 # 24 ore
 
     def _url_to_id(self, url):
         try:
@@ -200,6 +212,29 @@ class VirusTotalControl:
             return None
 
     def check_url(self, url):
+        current_time = time.time()
+        
+        # 1. Controllo Reset Finestra Minuto
+        if (current_time - self.last_reset_time) > self.QUOTA_WINDOW:
+            self.request_count = 0
+            self.last_reset_time = current_time
+            
+        # 2. Controllo Reset Finestra Giornaliera
+        if (current_time - self.daily_reset_time) > self.DAILY_WINDOW:
+            self.daily_count = 0
+            self.daily_reset_time = current_time
+
+        # 3. Controllo Limiti
+        if self.daily_count >= self.DAILY_LIMIT:
+             return {'error': True, 'quota_exceeded': True, 'message': 'Quota Giornaliera VirusTotal Esaurita (500 req/day). Controllo saltato.'}
+        
+        if self.request_count >= self.QUOTA_LIMIT:
+            return {'error': True, 'quota_exceeded': True, 'message': 'Quota Minuto API superata (4 req/min). Controllo saltato.'}
+
+        # 4. Incremento contatori (solo se procediamo)
+        self.request_count += 1
+        self.daily_count += 1
+
         url_id = self._url_to_id(url)
         if not url_id: return None
 
@@ -221,10 +256,12 @@ class VirusTotalControl:
             elif response.status_code == 404:
                 return {'detected': False, 'source': 'VirusTotal', 'status': 'Unknown/New'}
             elif response.status_code == 429:
-                print("⚠️ [VirusTotal] Quota API superata.")
+                return {'error': True, 'message': 'Quota API superata (429)'}
+            else:
+                return {'error': True, 'message': f'Status {response.status_code}: {response.text[:100]}'}
         except Exception as e:
-            print(f"❌ [VirusTotal] Errore: {e}")
-        return None
+            return {'error': True, 'message': f'Eccezione: {str(e)}'}
+        return {'error': True, 'message': 'Nessun dato ritornato'}
 
 class CapeControl:
     def __init__(self, api_url, api_token=None):

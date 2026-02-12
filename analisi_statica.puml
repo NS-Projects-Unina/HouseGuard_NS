@@ -1,0 +1,42 @@
+@startuml
+start
+
+if (È un dominio?) then (si)
+
+  if (PhishingArmy\noppure\ncertificato self-signed\noppure\nScore VirusTotal > 18?) then (si)
+      :Blocca;
+      stop
+  else (no)
+    if (caratteri stranieri\noppure\ncertificato gratuito?) then (si)
+      if (Score VirusTotal > 10\noppure\n% Typosquat >= 70?) then (si)
+        :Blocca;
+        stop
+      endif
+    endif
+  endif
+
+  if (Score VirusTotal <= 6?) then (si)
+    if (% Typosquat < 10?) then (si)
+      if (certificato a pagamento?) then (si)
+        :Lascia passare;
+        stop
+      endif
+    endif
+  endif
+
+else (no)
+  if (Domain bloccato\noppure\nDominio sospetto e Score VirusTotal > 10?) then (si)
+    :Blocca;
+    stop
+  else (no)
+    if (Score VirusTotal <= 6?) then (si)
+      :Lascia passare;
+      stop
+    endif
+  endif
+endif
+  
+:Sospetto;
+stop
+
+@enduml

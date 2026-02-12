@@ -46,6 +46,10 @@ L'analisi del traffico viene effettuata a vari livelli:
 2. Il sito è considerato sospetto: il traffico viene inoltrato a CAPE per effettuare analisi più approfondite
 3. Il sito è considerato pericoloso: il traffico viene bloccato.
 
+<p align="center" width="100%">
+    <img width="80%" src="images/analisi_statica.png">
+</p>
+
 #### Analisi statica `modulo/staticLinkModule.py`
 
 Questo modulo esegue un'analisi preliminare dell'URL senza visitarlo direttamente, permettendo una valutazione rapida della minaccia. I suoi componenti principali includono:
@@ -83,44 +87,22 @@ Funzionamento:
 3. **Verdetto**: Se il report indica "malevolo", il Proxy blocca la connessione e aggiorna il firewall.
 4. **Rapporto**: Viene generato un rapporto dettagliato dell'analisi. Il rapporto viene comunicato poi al proxy tramite API.
 
-### Firewall (Difesa Attiva) `conf_ssh`
+### Firewall (Difesa Attiva)
 
 Il sistema estende la protezione oltre il proxy, agendo direttamente sul Firewall dell'host Windows.
-Quando una minaccia viene confermata, il modulo Linux stabilisce una connessione SSH sicura verso l'host Windows per applicare regole di blocco a livello di sistema operativo.
+Quando una minaccia viene confermata, il modulo Linux utilizza l'interoperabilità di WSL per eseguire comandi `netsh` sull'host Windows e applicare regole di blocco a livello di sistema operativo.
 
 **Meccanismo:**
 
 1. **Rilevamento**: Viene identificato un link o file malevolo.
-2. **Azione Remota**: Viene inviato un comando `netsh advfirewall` all'host tramite SSH.
+2. **Azione Remota**: Viene eseguito il comando `netsh.exe advfirewall` direttamente dall'ambiente WSL.
 3. **Blocco Totale**: L'IP viene bloccato sia in entrata che in uscita su tutte le porte.
 
 ## Guida all'installazione
 
 Il sistema è stato testato su Windows 11, con un ambiente WSL2 che esegue un immagine di Ubuntu 22.04 LTS.
 
-### Firewall
 
-Per consentire al modulo Linux di inviare comandi all'host Windows per la gestione del firewall, è necessario configurare il server OpenSSH:
-
-1. **Installazione**:
-   Aprire PowerShell come amministratore ed eseguire:
-   
-   ```powershell
-   Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
-   ```
-2. **Avvio del servizio**:
-   Impostare l'avvio automatico e avviare il demone `sshd`:
-   
-   ```powershell
-   Set-Service -Name sshd -StartupType 'Automatic'
-   Start-Service sshd
-   ```
-3. **Regola di accesso**:
-   Abilitare il traffico sulla porta 22 nel firewall di Windows:
-   
-   ```powershell
-   New-NetFirewallRule -Name sshd -DisplayName 'OpenSSH Server (sshd)' -Enabled True -Direction Inbound -Protocol TCP -Action Allow -LocalPort 22
-   ```
 
 ### Macchina virtuale
 
