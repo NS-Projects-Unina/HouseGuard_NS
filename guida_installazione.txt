@@ -38,7 +38,9 @@ chiudere l'esecuzione di start_protection.sh
 
 installare il certificato di mitmproxy
 
+\\wsl.localhost\Ubuntu-22.04\home\$USER\.mitmproxy
 
+avanti -> avanti -> avanti -> spunta su "colloca tutti i certificati nel seguente archivio", fare su sfoglia e selezionare "Autorità di certificazione radice attendibile", poi avanti e fine
 
 SETUP CAPE
 
@@ -69,7 +71,7 @@ sudo chown -R $USER:$USER /mnt/c/Users/SiMonee/Desktop/NS/HouseGuard_NS/cape_sou
 source venv/bin/activate
 
 sudo apt update
-sudo apt install libjpeg-dev zlib1g-dev libtiff5-dev libfreetype6-dev liblcms2-dev libwebp-dev tcl8.6-dev tk8.6-dev python3-tk libharfbuzz-dev libfribidi-dev libxcb1-dev -y
+sudo apt install libjpeg-dev zlib1g-dev libtiff5-dev libfreetype6-dev liblcms2-dev libwebp-dev tcl8.6-dev tk8.6-dev python3-tk libharfbuzz-dev libfribidi-dev libxcb1-dev sudo apt install graphviz libgraphviz-dev pkg-config -y
 
 
 pip install sflock django
@@ -79,6 +81,11 @@ python3 -m pip install --upgrade pip setuptools wheel poetry-core
 pip install -r extra/optional_dependencies.txt
 
 python3 -m pip install --upgrade pip setuptools wheel poetry-core pyattack
+
+pip3 install pyzipper -U
+
+pip install gevent
+
 
 pip install -U git+https://github.com/CAPESandbox/httpreplay
 
