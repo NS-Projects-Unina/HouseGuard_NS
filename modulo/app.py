@@ -437,28 +437,22 @@ class PhishingProxy:
 
     def process_response(self, url, domain, is_root_path = False, deep_analyze = False) -> str:
         
-        # --- Check su cache:
-        #     Se l'URL è presente, si verifica se
-        #     è in atto una analisi dinamica per l'url corrente
-        #     o se la richiesta va bloccata o lasciata passare
-        # Lista di domini che rompono la connessione con MITM (Certificate Pinning)
-        # Questi non dovrebbero nemmeno essere intercettati, ma se lo sono, li lasciamo passare.
-        
         # --- (1) Check su LISTE LOCALI (whitelist/blacklist)
         #     Hanno priorità assoluta sulla cache: se l'admin ha messo in WL, deve passare subito.
+
         if self.basic_control.checkWhitelist(domain):
-            self.analyze_logger.debug("[Proxy] dominio in whitelist")
+            self.analyze_logger.info("[Proxy] dominio in whitelist")
             return "pass" 
             
         if self.basic_control.checkWhitelist(url):
-            self.analyze_logger.debug("[Proxy] URL in whitelist")
+            self.analyze_logger.info("[Proxy] URL in whitelist")
             return "pass"
 
         if self.basic_control.checkBlacklist(domain):
-            self.analyze_logger.debug("[Proxy] dominio in blacklist")
+            self.analyze_logger.info("[Proxy] dominio in blacklist")
             return "block"
         if self.basic_control.checkBlacklist(url):
-            self.analyze_logger.debug("[Proxy] URL in blacklist")
+            self.analyze_logger.info("[Proxy] URL in blacklist")
             return "block"
 
         # --- (2) Check su CACHE (Redis)
