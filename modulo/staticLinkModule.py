@@ -61,6 +61,34 @@ class BasicControl:
             # Opzionale: stampa un errore nei log di mitmproxy se il file manca
             print(f"ERRORE: File non trovato: {file_path}")
             return False
+    
+    def getList(self, type_list) -> list[str] | None:
+        """
+        Legge la lista con filename indicato e la restituisce come lista Python 
+        """
+
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        
+        file_path = os.path.join(base_dir, f"{type_list}.txt")
+
+        chosen_list = []
+        
+        print(f"📂 [Basic Control] Caricamento URLs {type_list} in memoria...")
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                chosen_list = [
+                    line.strip()
+                    for line in f 
+                    if line.strip() and not line.startswith('#')
+                ]
+
+            print(f"🔹 [Basic Control] {len(chosen_list)} URLs caricati da {type_list}.")
+
+        except FileNotFoundError:
+            print(f"❌ [Basic Control] File {type_list} non trovato: {file_path}")
+            return None
+
+        return chosen_list 
         
     def checkBlacklist(self, link):
         return self.checkList(link,'blacklist')
@@ -437,26 +465,12 @@ class ForeignCharDetector:
         return round(score, 2)
 
 class TypoDetector:
-    def __init__(self, whitelist_domains):
-        
-        # 1. SET per lookup istantaneo
-        self.whitelist_set = set(whitelist_domains)
-        
-        # 2. INDICE PER LUNGHEZZA per Typo Check
-        self.len_index = defaultdict(list)
-        
-        # 3. SET DEI CORE per Combo Check
-        self.whitelist_cores = set()
+    def __init__(self, whitelist_name):
 
-        # PRE-PROCESSING
-        for domain in whitelist_domains:
-            core = self._extract_core(domain)
-            
-            # Salviamo il core per i controlli successivi
-            if len(core) > 2: # Ignoriamo domini cortissimi
-                self.len_index[len(core)].append(core)
-                self.whitelist_cores.add(core)
+        self.whitelist_name = whitelist_name
 
+        self.load_data()
+    
         # Mappa Leet Speak (Numeri -> Lettere)
         self.leet_map = str.maketrans({
             '0': 'o', '1': 'l', '3': 'e', '4': 'a', '5': 's', 
@@ -472,6 +486,34 @@ class TypoDetector:
         if "." in clean:
             return clean.split(".")[0] 
         return clean
+    
+    def load_data(self, **_kwargs):
+        whitelist_urls = BasicControl().getList(self.whitelist_name)
+
+        # 1. SET per lookup istantaneo
+        whitelist_domains = set()
+        for url in whitelist_urls:
+            domain = get_clean_domain(url)
+            if domain not in whitelist_domains:
+                whitelist_domains.add(domain)
+
+        self.whitelist_set = whitelist_domains
+        
+        # 2. INDICE PER LUNGHEZZA per Typo Check
+        self.len_index = defaultdict(list)
+        
+        # 3. SET DEI CORE per Combo Check
+        self.whitelist_cores = set()
+
+        # PRE-PROCESSING
+        for domain in whitelist_domains:
+            core = self._extract_core(get_clean_domain(domain))
+            
+            # Salviamo il core per i controlli successivi
+            if len(core) > 2: # Ignoriamo domini cortissimi
+                self.len_index[len(core)].append(core)
+                self.whitelist_cores.add(core)
+        
 
     # 4. CACHE MEMORY
     # Memorizza gli ultimi 2048 risultati. 

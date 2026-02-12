@@ -9,6 +9,7 @@ import time
 from dotenv import load_dotenv
 from enum import Enum
 import logging
+from typing import Dict
 
 from mitmproxy.log import ALERT
 import subprocess
@@ -149,13 +150,10 @@ class PhishingProxy:
         if vt_key:
              vt_key = vt_key.strip()
 
-        # formato del tipo {"posteitaliane.it : "pass", "postltaliane.it" : "block"}
+        # Inizializzazione cache REDIS
         self.cache = DAO("REDIS_DB_CACHE").get_db_connection()
         self.cache.flushdb()
 
-        # Correggiamo l'uso della variabile
-        # CAPE_TOKEN è già stato definito sopra, non riassegniamo cape_key inesistente
-        # CAPE_TOKEN = cape_key  <-- Questa riga era l'errore
         CAPE_API_URL = "http://127.0.0.1:8000"
         
         self.cape_engine = CapeControl(CAPE_API_URL, CAPE_TOKEN)
@@ -167,21 +165,19 @@ class PhishingProxy:
         self.user = self.config_data['user']
         self.ip = self. config_data['ip']
 
-        # 
-        whitelist_domains = ["google.com", "microsoft.com", "posteitaliane.it"]
-
         # Inizializzazioni delle classi di controllo statico come attributi di istanza
         self.basic_control = BasicControl()
         self.certificate_control = CertificateControl()
         self.phishing_army = PhishingArmyControl()
-        self.vt_engine = VirusTotalControl(vt_key)
-        self.typo_control = TypoDetector(whitelist_domains)
+        self.vt_engine = VirusTotalControl(api_key=vt_key)
+        self.typo_control = TypoDetector(whitelist_name="whitelist")
         self.foreign_control = ForeignCharDetector()
 
         self.lastUpdate = time.time()
 
         self.phishing_army.load_data(True if not hasattr(self, 'lastUpdate') or (time.time() - self.lastUpdate) > 21600 else False)
-        
+        self.typo_control.load_data()
+
 
         # True Per vedere i log di qualsiasi URL,
         # False per i soli URL da analizzare approfonditamente
@@ -227,12 +223,18 @@ class PhishingProxy:
         except Exception:
             pass
 
+        # --- Avvio thread di aggiornamento periodico delle liste ---
+
         self.analyze_logger.info("Avvio updaters in corso...")
 
         pishing_army_updater = UpdaterThread(21600, self.phishing_army)
         pishing_army_updater.start()
 
+        typosquatting_updater = UpdaterThread(120, self.typo_control)
+        typosquatting_updater.start()
+
         self.analyze_logger.info("Updaters avviati")
+
 
     def blocca_indirizzo(self, port, indirizzo_target):
         self.log_print(f"🔒 Blocco traffico per {indirizzo_target}:{port}...")
@@ -292,9 +294,14 @@ class PhishingProxy:
         except subprocess.CalledProcessError as e:
             self.log_print(f"❌ Errore durante l'applicazione del firewall: {e}")
 
-    def staticAnalysis_score(self, url, is_domain = False, use_virus_total = True) -> float:
-        # Sistema a punteggio: se viene superata una certa soglia, allora il link viene considerato sospetto
+    def staticAnalysis_score(self, url, is_domain = False, use_virus_total = True) -> Dict[str, float]:
+        """
+        Invoca i controlli sull'URL o dominio fornito,
+        elabora un punteggio per ogni risultato e li restituisce in un dizionario
+        """
         scores = {}
+
+        # Analisi certificato TLS
 
         if is_domain:
             scores["certs"] = 0
@@ -313,6 +320,7 @@ class PhishingProxy:
                 self.log_print(certificate_analysis)
                 self.log_print("-" * 30)
                 scores["certs"] += 100
+        
         # Analisi database scaricabili(PhishingArmy)
         # Blocco istantaneo per ogni presenza rilevata
 
@@ -369,10 +377,6 @@ class PhishingProxy:
                 self.log_print("   ⚠️ Errore/Quota VirusTotal o Errore API (Nessuna risposta).")
                 scores.pop("virustotal")
             
-            # Non serve più lo sleep forzato di 15s perché gestiamo la quota internamente
-            # self.log_print("   ⏳ Pausa 15s per quota API VirusTotal...")
-            # time.sleep(15)
-        
         else:
              # Se non uso VirusTotal (es. risorsa non analizzabile), lo segnalo in debug
              pass 
@@ -439,8 +443,6 @@ class PhishingProxy:
         #     o se la richiesta va bloccata o lasciata passare
         # Lista di domini che rompono la connessione con MITM (Certificate Pinning)
         # Questi non dovrebbero nemmeno essere intercettati, ma se lo sono, li lasciamo passare.
-
-    
         
         # --- (1) Check su LISTE LOCALI (whitelist/blacklist)
         #     Hanno priorità assoluta sulla cache: se l'admin ha messo in WL, deve passare subito.
@@ -582,6 +584,9 @@ class PhishingProxy:
                 self.analyze_logger.setLevel(logging.INFO)
         else:
             self.analyze_logger.debug(logString)
+        
+        # DEBUG
+        deep_analyze = False
 
         decision = self.process_response(url, domain, is_root_path = isRootPath, deep_analyze=deep_analyze)
 
