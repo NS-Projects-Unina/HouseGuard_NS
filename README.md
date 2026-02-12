@@ -284,6 +284,7 @@ Assicurarsi che il sistema stia eseguendo all'interno di WSL.
    ```bash
    ./scripts/global_stop.sh
    ```
+4. Per visionare il traffico del proxy connettersi su http://localhost:8081
 
 ### Componenti CAPE
 I componenti di CAPE devono essere eseguiti in terminali separati (o tramite un gestore di processi tipo tmux/screen), all'interno del venv configurato per CAPE, all'interno della cartella `cape_source`:
@@ -308,3 +309,12 @@ I componenti di CAPE devono essere eseguiti in terminali separati (o tramite un 
    cd ~/HouseGuard_NS/cape_source && source venv/bin/activate
    ./guardian.sh
    ```
+
+#### Analisi dei file
+Per analizzare i file con CAPE, è sufficiente collegarsi a http://localhost:8000 
+
+1. Cliccare su "Submit" in alto a destra
+2. Selezionare "File" e caricare i file da analizzare
+3. Cliccare su "Submit" in basso a destra
+4. Attendere che l'analisi sia completata
+5. Cliccare su "Reports" in alto a destra per visualizzare i report
