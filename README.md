@@ -210,7 +210,7 @@ Eseguire questi passaggi nell'ambiente WSL per configurare l'engine di analisi d
    Navigare nella cartella `cape_source`, attivare il venv di CAPE(Fare attenzione a eventuali caratteri di windows su wsl col comando sed -i 's/\r$//' venv/bin/activate) ed installare le dipendenze.
 
    ```bash
-   cd cape_source
+   cd ~/HouseGuard_NS/cape_source
    sed -i 's/\r$//' venv/bin/activate
    source venv/bin/activate
    ```
