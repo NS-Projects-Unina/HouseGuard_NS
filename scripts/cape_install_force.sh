@@ -1,4 +1,3 @@
-```shell
 #!/bin/bash
 
 # Ottiene la directory dello script per gestire i percorsi in modo relativo
@@ -49,4 +48,3 @@ done < "$REQ_FILE"
 
 echo "--------------------------------------------------"
 echo "🏁 Procedura completata."
-```
