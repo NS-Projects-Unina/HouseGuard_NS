@@ -96,7 +96,7 @@ Quando una minaccia viene confermata, il modulo Linux utilizza l'interoperabilit
 
 1. **Rilevamento**: Viene identificato un link o file malevolo.
 2. **Azione Remota**: Viene eseguito il comando `netsh.exe advfirewall` direttamente dall'ambiente WSL.
-3. **Blocco Totale**: L'IP viene bloccato sia in entrata che in uscita su tutte le porte.
+3. **Blocco Totale**: L'IP viene bloccato sia in entrata che in uscita su una determinata porta.
 
 ## Guida all'installazione
 
