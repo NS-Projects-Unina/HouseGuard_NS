@@ -1,0 +1,104 @@
+Come installare HouseGuard
+
+Ambiente di sviluppo: WSL con Ubuntu 22.04 LTS, Docker-Desktop
+
+Step0: setup wsl
+sudo apt-get update
+sudo apt-get install python3.10-venv python3-pip
+
+Inserire l'ambiente wsl in docker 
+
+impostazioni -> resources -> wsl integration -> spunta su integration with distro Ubuntu-22.04
+
+da WSL -> nano ~/.docker/config.json e incollare questo json vuoto
+{
+  "auths": {}
+}
+
+sudo usermod -aG docker $USER
+
+newgrp docker
+
+
+
+Step 1. Clone della repository
+git clone ecc...
+Step 2. Creazione di un ambiente virtuale
+Avviare WSL 
+wsl -d Ubuntu-22.04
+
+SETUP Proxy
+Installazione requirements nella cartella di base
+avvia start_protection.sh la prima volta: dovrebbe apparire un warn per l'assenza di variabili d'ambiente (del file env)
+le variabili d'ambiente sono due
+VIRUSTOTAL_APIKEY: chiave API per integrazione del servizio di threat intelligence offerto da VirusTotal
+CAPE_APIKEY: chiave API generata in un secondo momento per il collegamento con il servizio di sandboxing CAPE
+
+chiudere l'esecuzione di start_protection.sh
+
+installare il certificato di mitmproxy
+
+
+
+SETUP CAPE
+
+macchina virtuale 
+
+Dall'ambiente WSL
+
+installare servizi di virtualizzazione 
+
+sudo apt install -y qemu-kvm libvirt-daemon-system libvirt-clients bridge-utils virt-manager
+
+riavviare sessione wsl
+
+scaricare da link google
+
+seguire guida dal readme in conf_vm
+
+controllare se la rete virtuale è 192.168.122.1/24
+
+cuckoo
+
+Fare attenzione a eventuali caratteri di windows su wsl col comando sed -i 's/\r$//' venv/bin/activate
+
+cd houseguard_ns/cape_vm
+
+sudo chown -R $USER:$USER /mnt/c/Users/SiMonee/Desktop/NS/HouseGuard_NS/cape_source/venv
+
+source venv/bin/activate
+
+sudo apt update
+sudo apt install libjpeg-dev zlib1g-dev libtiff5-dev libfreetype6-dev liblcms2-dev libwebp-dev tcl8.6-dev tk8.6-dev python3-tk libharfbuzz-dev libfribidi-dev libxcb1-dev -y
+
+
+pip install sflock django
+
+python3 -m pip install --upgrade pip setuptools wheel poetry-core
+
+pip install -r extra/optional_dependencies.txt
+
+python3 -m pip install --upgrade pip setuptools wheel poetry-core pyattack
+
+pip install -U git+https://github.com/CAPESandbox/httpreplay
+
+            sudo groupadd pcap
+            sudo usermod -a -G pcap $USER
+            sudo chgrp pcap /usr/bin/tcpdump
+            sudo setcap cap_net_raw,cap_net_admin=eip /usr/bin/tcpdump
+			
+per server web
+
+lasciare attivo il container postgresql
+eseguire il comando python3 web/manage.py migrate
+python3 web/manage.py createsuperuser
+dare username e password, il campo mail può essere lasciato vuoto
+
+avviare il server
+
+accedere con le credenziali
+
+Andare su admin -> auth token e aggiungere una nuova chiave 
+Dal menù a tendina, selezionare il proprio nome utente
+fare su save
+la chiave risultante sarà la chiave per le chiamate API con il modulo CAPE
