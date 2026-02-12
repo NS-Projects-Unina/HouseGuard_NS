@@ -578,9 +578,6 @@ class PhishingProxy:
                 self.analyze_logger.setLevel(logging.INFO)
         else:
             self.analyze_logger.debug(logString)
-        
-        # DEBUG
-        deep_analyze = False
 
         decision = self.process_response(url, domain, is_root_path = isRootPath, deep_analyze=deep_analyze)
 
