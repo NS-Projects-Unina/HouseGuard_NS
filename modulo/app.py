@@ -421,7 +421,7 @@ class PhishingProxy:
             decision = "block"
             return decision
         
-        # Virustotal: tipicamente < 6 malevolo, ma ha falsi negativi per siti mai analizzati
+        # Virustotal: tipicamente < 6 non malevolo, ma ha falsi negativi per siti mai analizzati
         # si riducono falsi negativi se il certificato è a pagamento e se non c'é typosquatting
         if  "virustotal" in scores:
             if scores["virustotal"] <= 6 and scores["typo"] < 10 and scores["certs"] == 0:

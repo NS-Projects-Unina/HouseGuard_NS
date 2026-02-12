@@ -113,10 +113,8 @@ class CertificateControl:
             # Timeout per la verifica dei ceritifcati
             timeout_seconds = 5
             
-            # Creiamo un contesto SSL che non verifica rigorosamente (per evitare errori interni)
+            # Creiamo un contesto SSL
             context = ssl.create_default_context()
-            context.check_hostname = False
-            context.verify_mode = ssl.CERT_NONE
 
             try:
                 # Tenta la connessione con timeout stretto
@@ -146,7 +144,7 @@ class CertificateControl:
                         is_self_signed = (issuer_cn == subject_cn) and (issuer_org == get_value(cert.get('subject', []), 'organizationName'))
 
                         if is_self_signed:
-                            return {"status": "WARNING", "reason": "Certificato Self-Signed (Autofirmato)"}
+                            return {"status": "DANGER", "reason": "Certificato Self-Signed (Autofirmato)"}
 
                         if issuer_org:
                             for free_ca in self.free_cas:
@@ -160,7 +158,7 @@ class CertificateControl:
                 return {"status": "UNKNOWN", "reason": "Timeout connessione"}
 
             except ssl.SSLCertVerificationError as e:
-                return {"status": "DANGER", "reason": f"Verifica SSL fallita (possibile self-signed o root non fidato): {e}"}
+                return {"status": "UNKNOWN", "reason": f"Verifica SSL fallita: {e}"}
             
             except Exception as e:
                 # Qualsiasi altro errore (es. connessione rifiutata) non deve bloccare la navigazione

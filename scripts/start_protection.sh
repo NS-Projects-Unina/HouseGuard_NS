@@ -114,4 +114,5 @@ mitmweb \
     --web-port 8081 \
     --set connection_strategy=lazy \
     --set ssl_verify_upstream_cert=false \
-    --set block_global=false
+    --set block_global=false \
+    --set ssl_insecure=true
