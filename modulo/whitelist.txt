@@ -1,0 +1,9 @@
+"localhost",
+"127.0.0.1",
+"www.virustotal.com", 
+"virustotal.com", 
+"phishing.army",          # Corretto: solo dominio
+"data.phishtank.com",     # Corretto: solo dominio
+"googleapis.com",         # Fondamentale per far andare Chrome/Android
+"accounts.google.com",
+"gstatic.com"

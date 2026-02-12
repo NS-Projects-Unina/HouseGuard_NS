@@ -10,8 +10,6 @@
 - Gabriel Covone M63001809
 - De Prophetis Claudio M63001815
 
-
-
 ## Cosa è HouseGuard?
 
 HouseGuard è una soluzione progettata per proteggere le reti domestiche dalle minacce informatiche quotidiane. L'obiettivo principale del progetto è tutelare gli utenti meno esperti, spesso più vulnerabili ai rischi della rete, fornendo un sistema di difesa automatizzato e intuitivo.
@@ -27,7 +25,9 @@ HouseGuard_NetworkSecurity è il modulo dedicato alla protezione del perimetro d
 
 ## Architettura generale
 
-(immagine architettura)
+<p align="center" width="100%">
+    <img src="images/Funzionamento/HouseGuard_Schema.png">
+</p>
 
 ### MITMProxy `modulo`
 
@@ -46,10 +46,102 @@ L'analisi del traffico viene effettuata a vari livelli:
 2. Il sito è considerato sospetto: il traffico viene inoltrato a CAPE per effettuare analisi più approfondite
 3. Il sito è considerato pericoloso: il traffico viene bloccato.
 
+<details>
+<summary><b>flusso decisionale schematizzato</b></summary>
+
+(Richiesta HTTP Intercettata)
+|
+v
+
+
+
++-----------------------------------------------------------------------------------------+
+|                                  1. LISTE DI CONTROLLO                                  |
+|  (File Locali)                                                                          |
+|                                                                                         |
+|  [Whitelist?] -------(Si)--------> [Decisione: PASS] ---------------------------------->| (Fine)
+|        |                                                                                |
+|       (No)                                                                              |
+|        v                                                                                |
+|  [Blacklist?] -------(Si)--------> [Decisione: BLOCK] --------------------------------->| (Fine)
++--------+--------------------------------------------------------------------------------+
+|
+v
++-----------------------------------------------------------------------------------------+
+|                                    2. CONTROLLO CACHE                                   |
+|  (Redis)                                                                                |
+|                                                                                         |
+|  [URL in Cache?] ----(Si)----> [Decisione: PASS / BLOCK / PROCESSING] ----------------->| (Fine)
+|        |                                                                                |
+|       (No)                                                                              |
+|        v                                                                                |
+|  [Dominio in Cache?] --(Si & Block)--> [Decisione: BLOCK] ----------------------------->| (Fine)
+|        |                                                                                |
+|       (No/Pass)                                                                         |
++--------+--------------------------------------------------------------------------------+
+|
+v
++-----------------------------------------------------------------------------------------+
+|                            3. ANALISI STATICA (Albero di decisione)                     |
+|                                                                                         |
+|  A. Analisi DOMINIO:                                                                    |
+|     1. Gestione Certificati (Self-signed? Free CA? Assente?)                            |
+|     2. Phishing Army (Database locale) --> Se Trovato: BLOCK Immediato                  |
+|     3. Typosquatting (Distanza da domini legittimi white-listed)                        |
+|     4. Caratteri Stranieri (Omografi)                                                   |
+|     4. VirusTotal API (Se DeepAnalyze=True)                                             |
+|                                                                                         |
+|     [Decisione Dominio] --(BLOCK)--> [Cache Dominio: BLOCK] --------------------------->| (Block)
+|            |                                                                            |
+|          (Pass o Suspect)                                                               |
+|            v                                                                            |
+|  B. Analisi URL Completo:                                                               |
+|     1. VirusTotal API (Se DeepAnalyze=True)                                             |
+|        [ Check Quota: 4/min, 500/day ]                                                  |
+|        - Se Quota OK: Richiesta API                                                     |
+|        - Se Quota KO: Skip (Warning)                                                    |
+|                                                                                         |
+|      [Decisione URL]                                                                    |
+|            |                                                                            |
+|            +---------------(BLOCK)--> [Cache URL: BLOCK] ------------------------------>| (Block)
+|            |                                                                            |
+|            +--------------------------------------------------------------------------->| (Pass)
+|            |                                                                            |
+|            v                                                                            |
+|     ("Suspect")                                                       |
++--------+--------------------------------------------------------------------------------+
+|
+v
++-----------------------------------------------------------------------------------------+
+|                              4. ANALISI DINAMICA (Sandbox)                              |
+|                                                                                         |
+|  [Deep Analyze Richiesto?] --(No)--> [Decisione: PASS (Low Confidence)] --------------->| (Pass)
+|            |                                                                            |
+|           (Si)                                                                          |
+|            v                                                                            |
+|  [Invio a CAPE Sandbox]                                                                 |
+|            |                                                                            |
+|  [Stato: PROCESSING] ------------------------------------------------------------------>| (Wait Page)
+|            |                                                                            |
+|      (Thread Separato)                                                                  |
+|            v                                                                            |
+|      [Attesa Report CAPE]                                                               |
+|            |                                                                            |
+|      [Malscore > 5.0?] --(Si)--> [Update Cache: BLOCK] ----> [Firewall Windows BLOCK]   |
+|            |                                                                            |
+|           (No)                                                                          |
+|            +-----------> [Update Cache: PASS]                                           |
++-----------------------------------------------------------------------------------------+
+
+</details>
+
+<details>
+<summary><b>Albero di decisione analisi statica</b></summary>
 <p align="center" width="100%">
-    <img width="80%" src="images/analisi_statica.png">
+    <img width="80%" src="images/Funzionamento/analisi_statica.png">
 </p>
 
+</details>
 #### Analisi statica `modulo/staticLinkModule.py`
 
 Questo modulo esegue un'analisi preliminare dell'URL senza visitarlo direttamente, permettendo una valutazione rapida della minaccia. I suoi componenti principali includono:
@@ -76,7 +168,9 @@ L'estensione `app.py` rappresenta il core logico dell'integrazione con Mitmproxy
 - **Gestione degli Eventi**: Gestisce il ciclo di vita delle richieste (request, response, error), iniettando risposte custom o pagine di blocco quando viene rilevata una minaccia.
 - **Comunicazione Inter-Modulo**: Funge da ponte tra il proxy e il sistema di difesa attiva (Firewall), segnalando gli IP malevoli da isolare a livello di rete.
 
-### CAPE (Analisi Dinamica) `cape_source`
+
+### [CAPE (Analisi Dinamica)](https://github.com/kevoreilly/CAPEv2)
+
 
 CAPE è una sandbox open-source per l'analisi di file e URL sospetti in maniera approfondita, tramite l'utilizzo di uno snapshot di una macchina virtuale Windows. Questo per garantire che la sandbox sia sempre nello stesso stato.
 
@@ -96,72 +190,210 @@ Quando una minaccia viene confermata, il modulo Linux utilizza l'interoperabilit
 
 1. **Rilevamento**: Viene identificato un link o file malevolo.
 2. **Azione Remota**: Viene eseguito il comando `netsh.exe advfirewall` direttamente dall'ambiente WSL.
-3. **Blocco Totale**: L'IP viene bloccato sia in entrata che in uscita su una determinata porta.
+3. **Blocco Totale**: L'IP viene bloccato sia in entrata che in uscita su tutte le porte.
 
 ## Guida all'installazione
 
-Il sistema è stato testato su Windows 11, con un ambiente WSL2 che esegue un immagine di Ubuntu 22.04 LTS.
+Il sistema è stato testato su **Windows 11**, utilizzando **WSL2** con un'immagine **Ubuntu 22.04 LTS**.
+
+### 1. Configurazione Preliminare (WSL & Docker)
+
+Per il corretto funzionamento dell'analisi dinamica e dell'integrazione, è necessario configurare Docker Desktop con WSL2.
+
+Importante notare che la configurazione attuale è testata usando due ambienti virtuali: uno per l'esecuzione di mitmproxy e una per l'esecuzione di CAPE
+
+1. **Docker Integration**: Aprire Docker Desktop -> Settings -> Resources -> WSL Integration. Abilitare l'integrazione per la distribuzione Ubuntu-22.04.
+2. **Setup Docker in WSL**:
+   Aprire il terminale WSL e configurare il file di configurazione Docker per evitare conflitti di credenziali:
+   ```bash
+   nano ~/.docker/config.json
+   # Incollare il seguente contenuto:
+   # {
+   #   "auths": {}
+   # }
+   ```
+   Aggiungere l'utente corrente al gruppo docker per eseguire comandi senza sudo:
+   ```bash
+   sudo usermod -aG docker $USER
+   newgrp docker
+   ```
+3. **Pacchetti Base**:
+   Aggiornare e installare i pacchetti essenziali:
+   ```bash
+   sudo apt-get update
+   sudo apt-get install python3.10-venv python3-pip
+   ```
+
+### 2. Installazione HouseGuard (Proxy) e Configurazione
+
+1. **Clone & Venv**:
+   Clonare la repository e configurare l'ambiente virtuale:
+   ```bash
+   git clone <repository_url>
+   cd HouseGuard_NS
+   python3 -m venv venv
+   source venv/bin/activate
+   ```
+
+2. **Dipendenze Proxy**:
+   Installare le librerie necessarie per il proxy e l'analisi statica:
+   ```bash
+   pip install -r modulo/requirements.txt
+   ```
+
+3. **Configurazione Variabili d'Ambiente**:
+   Creare un file `.env` nella root del progetto o esportare le variabili. Eseguendo `./scripts/global_start.sh` per la prima volta verrà segnalata la mancanza delle chiavi API.
+   - `VIRUSTOTAL_APIKEY`: Chiave API per l'integrazione con VirusTotal.
+   - `CAPE_APIKEY`: Chiave API per il collegamento con il servizio di sandboxing CAPE (generata successivamente).
+
+4. **Installazione Certificato Mitmproxy**:
+   Fondamentale per analizzare il traffico HTTPS.
+   - Dopo il primo avvio del proxy, il certificato viene generato in WSL in `~/.mitmproxy`.
+   - Dopo la prima esecuzione di `./scripts/global_start.sh`, il certificato verrà copiato in `modulo/mitmproxy_certs`.
+   - Con esplora risorse Windows, doppio click su `mitmproxy-ca-cert.p12`.
+   Doppio click -> Installa certificato -> Utente corrente.
+   - Selezionare "Colloca tutti i certificati nel seguente archivio" -> Sfoglia -> **Autorità di certificazione radice attendibili**.
+
+### 3. Installazione CAPE Sandbox
+
+Eseguire questi passaggi nell'ambiente WSL per configurare l'engine di analisi dinamica.
+
+1. **Dipendenze di Sistema e Virtualizzazione**:
+   Installare KVM, Libvirt e le dipendenze per la compilazione dei moduli Python:
+   ```bash
+   sudo apt install -y qemu-kvm libvirt-daemon-system libvirt-clients bridge-utils virt-manager
+   sudo apt install libjpeg-dev zlib1g-dev libtiff5-dev libfreetype6-dev liblcms2-dev libwebp-dev tcl8.6-dev tk8.6-dev python3-tk libharfbuzz-dev libfribidi-dev libxcb1-dev graphviz libgraphviz-dev pkg-config libdbus-1-dev libdbus-glib-1-dev libsasl2-dev libldap2-dev -y
+   ```
+   Riavviare la sessione WSL se necessario per applicare i permessi di `kvm`.
+
+   ```bash
+   sudo usermod -aG kvm $USER
+   sudo usermod -aG libvirt $USER
+   newgrp kvm
+   newgrp libvirt
+   ```
+2. **Macchina Virtuale (Vittima)**:
+   - **Download**: Scarica l'immagine disco `win10_vittima.qcow2` da [questo link](https://drive.google.com/file/d/1lFntYoGwtzFhvNu6kWv2nh68UyAX-J4l/view?usp=sharing) e posizionala nella directory di default di Libvirt 
+
+   ```bash
+   sudo cp win10_vittima.qcow2 /var/lib/libvirt/images/
+   ```
+   - **Importazione**: definire la VM usando il file XML fornito:
+   ```bash
+   virsh define win10_vittima_config.xml
+   ```
+   - **Snapshot**: Lo snapshot "Snap1" è già contenuto nel file del disco, ma bisogna dire a KVM di leggerlo e registrarlo:
+   ```bash
+   virsh snapshot-create win10_vittima --xmlfile win10_snapshot_Snap1.xml --redefine --current 
+   ```
+   - **Rete**: permettere l'avvio della rete virtuale di default
+   ```bash
+   virsh net-start default
+   virsh net-autostart default
+   ```
+   controllare se la rete sia attiva e abbia come indirizzo IP 192.168.122.1
+   ```bash
+   virsh net-info default
+   ```
+
+3. **Dipendenze Python CAPE**:
+   Navigare nella cartella `cape_source`, attivare il venv di CAPE(Fare attenzione a eventuali caratteri di windows su wsl col comando sed -i 's/\r$//' venv/bin/activate) ed installare le dipendenze.
+
+   ```bash
+   cd cape_source
+   sed -i 's/\r$//' venv/bin/activate
+   source venv/bin/activate
+   ```
+   Lo script automatizzato `cape_install_force.sh` è disponibile per automatizzare l'installazione delle dipendenze complesse. 
+   ```bash
+   ../scripts/cape_install_force.sh
+   ```
+   Eventuali errori vengono generati in un file `/requirements/requirement_error.txt`. Se il metodo continua a dare problemi, un secondo step è quello di utilizzare i requirements all'interno di `cape_source`
+   ```bash
+   cd ~/HouseGuard_NS/cape_source
+   pip install -r requirements.txt
+   pip install -r extra/optional_dependencies.txt
+   ```
+
+   in casi estremi, si consiglia di installare manualmente le dipendenze
+   ```bash
+   pip install sflock django
+   pip install requirements.txt
+   python3 -m pip install --upgrade pip setuptools wheel poetry-core
+   pip install -r extra/optional_dependencies.txt
+   python3 -m pip install --upgrade pip setuptools wheel poetry-core pyattack
+   pip3 install pyzipper -U
+   pip install gevent
+   ```
+
+3. **Configurazione PCAP (Tcpdump)**:
+   Per permettere a CAPE di catturare il traffico di rete della VM analisi senza permessi di root completi per l'intero processo:
+   ```bash
+   sudo groupadd pcap
+   sudo usermod -a -G pcap $USER
+   sudo chgrp pcap /usr/bin/tcpdump
+   sudo setcap cap_net_raw,cap_net_admin=eip /usr/bin/tcpdump
+   ```
 
 
 
-### Macchina virtuale
+### 4. Configurazione Interfaccia Web e API
 
-Per configurare la macchina virtuale Windows 10 necessaria per l'analisi dinamica, seguire i passaggi indicati:
+Per abilitare la comunicazione tra il Proxy e l'istanza CAPE:
 
-1. **Download e Decompressione**:
-   Scarica l'immagine disco `win10_vittima.qcow2` da [questo link](https://drive.google.com/file/d/1lFntYoGwtzFhvNu6kWv2nh68UyAX-J4l/view?usp=sharing) e posizionala nella directory delle immagini di Libvirt (solitamente `/var/lib/libvirt/images/`).
-2. **Importazione in KVM**:
-   Crea una nuova macchina virtuale tramite `virt-manager` o `virsh` utilizzando il file `.qcow2` come disco principale.
-3. **Configurazione Rete**:
-   Assicurati che la VM sia collegata alla rete virtuale corretta gestita dal modulo `rooter` di CAPE.
-4. **Snapshot**:
-   Avvia la VM, verifica che l'agent di CAPE sia in esecuzione automatica all'avvio e scatta uno snapshot chiamato `snapshot1`. Questo stato verrà ripristinato automaticamente dopo ogni analisi.
+1. **Database & Superuser**:
+   Preparare il database per l'interfaccia di gestione:
+   ```bash
+   cd ~/HouseGuard_NS/cape_source
+   python3 web/manage.py migrate
+   python3 web/manage.py createsuperuser
+   ```
+   Seguire le istruzioni a schermo per creare l'admin. Il campo mail può essere lasciato vuoto.
+
+
+   - Avviare il server web (vedi [Avvio del sistema](#avvio-del-sistema)).
+   - Accedere all'interfaccia admin (`http://localhost:8000/admin`) con le credenziali create.
+   - Andare su "Auth Tokens" -> Aggiungi token -> Selezionare l'utente creato -> Save.
+   - Copiare la chiave generata (`Token ...`) e inserirla nel file `.env` o nelle variabili d'ambiente come `CAPE_APIKEY`.
+
+2. **Configurazione API VirusTotal**:
+   - Ottenere una API key da VirusTotal: https://www.virustotal.com/gui/join-early-access
+   - Inserire la API key nel file `.env` o nelle variabili d'ambiente come `VIRUSTOTAL_APIKEY`.
 
 ## Avvio del sistema
-
-### Proxy (APLHA)
-
-1. USARE WSL e avviare Docker Desktop
-2. creare un ambiente virtuale
-3. installare le dipendenze   `pip install -r modulo/requirements.txt`
-4. Avviare il proxy col comando `./scripts/global_start.sh`
-5. Fermare il proxy col comando `./scripts/global_stop.sh`
-
-
-
-
-### Installazione delle dipendenze
-
-Installare i pacchetti Python necessari:
-
-```bash
-pip install -r modulo/requirements.txt
-```
+Assicurarsi che il sistema stia eseguendo all'interno di WSL.
+### Proxy (HouseGuard)
+1. Assicurarsi che Docker sia attivo.
+2. Attivare il venv di HouseGuard e avviare lo script globale:
+   ```bash
+   cd HouseGuard_NS
+   source venv/bin/activate
+   ./scripts/global_start.sh
+   ```
+3. Per fermare il proxy:
+   ```bash
+   ./scripts/global_stop.sh
+   ```
 
 ### Componenti CAPE
+I componenti di CAPE devono essere eseguiti in terminali separati (o tramite un gestore di processi tipo tmux/screen), all'interno del venv configurato per CAPE, all'interno della cartella `cape_source`:
 
-Eseguire in terminali separati:
-
-1. **Rooter** (Routing VM):
-   
+1. **Rooter** (Routing VM & Traffico):
    ```bash
    cd ~/HouseGuard_NS/cape_source && source venv/bin/activate
    sudo python3 utils/rooter.py -g $USER
    ```
 2. **Interfaccia Web**:
-   
    ```bash
    cd ~/HouseGuard_NS/cape_source && source venv/bin/activate
    python3 web/manage.py runserver 0.0.0.0:8000
    ```
-3. **Cuckoo (Core)**:
-   
+3. **Cuckoo (Core Engine)**:
    ```bash
    cd ~/HouseGuard_NS/cape_source && source venv/bin/activate
    python3 cuckoo.py -d
    ```
-4. **Guardian** (Generazione Report):
-   
+4. **Guardian** (Generazione Report & Bridge):
    ```bash
    cd ~/HouseGuard_NS/cape_source && source venv/bin/activate
    ./guardian.sh

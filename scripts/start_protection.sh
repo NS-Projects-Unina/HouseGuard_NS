@@ -18,6 +18,16 @@ PROJECT_ROOT="$SCRIPT_DIR/.."
 # 3. Spostiamoci nella root del progetto per eseguire tutto correttamente 
 cd "$PROJECT_ROOT" || exit 1
 
+# Funzione per eseguire global_stop in caso di CTRL+C
+global_stop() {
+    echo -e "\n${RED}[!] Rilevato CTRL+C. Avvio di global_stop...${NC}"
+    bash "$PROJECT_ROOT/scripts/global_stop.sh"
+    exit 0
+}
+
+# Imposta il trap per SIGINT
+trap global_stop SIGINT
+
 echo -e "${YELLOW}[*] Root del progetto impostata a: $(pwd)${NC}"
 
 # --- CONFIGURAZIONE PATH RELATIVA ALLA ROOT ---
@@ -81,6 +91,19 @@ echo -e "${YELLOW}[*] Avvio di Mitmproxy (venv) con modulo $SCRIPT_PATH...${NC}"
 
 # Attiviamo il venv prima di lanciare il comando
 source "$PROJECT_ROOT/venv/bin/activate"
+
+
+
+if ! diff -r ~/.mitmproxy "$PROJECT_ROOT/modulo/mitmproxy_certs" > /dev/null 2>&1; then
+    rm -rf "$PROJECT_ROOT/modulo/mitmproxy_certs"/*
+    mkdir -p "$PROJECT_ROOT/modulo/mitmproxy_certs"
+    cp -r ~/.mitmproxy/* "$PROJECT_ROOT/modulo/mitmproxy_certs/" 2>/dev/null
+    echo -e "${RED}[!] INSTALLA I CERTIFICATI${NC}"
+    bash "$PROJECT_ROOT/scripts/global_stop.sh"
+    exit 1
+fi
+
+
 
 # Ora 'mitmweb' userà quello installato nel venv, che vede il modulo 'redis'
 mitmweb \

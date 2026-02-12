@@ -20,8 +20,7 @@ VNC-Viewer-7.15.1-Windows-64bit.exe
 
 .env
 desktop.ini
-blacklist.txt
-whitelist.txt
+
 phishtank*
 phishing_army*
 local/

@@ -71,10 +71,24 @@ sudo chown -R $USER:$USER /mnt/c/Users/SiMonee/Desktop/NS/HouseGuard_NS/cape_sou
 source venv/bin/activate
 
 sudo apt update
-sudo apt install libjpeg-dev zlib1g-dev libtiff5-dev libfreetype6-dev liblcms2-dev libwebp-dev tcl8.6-dev tk8.6-dev python3-tk libharfbuzz-dev libfribidi-dev libxcb1-dev sudo apt install graphviz libgraphviz-dev pkg-config -y
+sudo apt install libjpeg-dev zlib1g-dev libtiff5-dev libfreetype6-dev liblcms2-dev libwebp-dev tcl8.6-dev tk8.6-dev python3-tk libharfbuzz-dev libfribidi-dev libxcb1-dev sudo apt install graphviz libgraphviz-dev pkg-config libdbus-1-dev libdbus-glib-1-dev libsasl2-dev libldap2-dev -y
+
+DIPENDENZE: ATTENZIONE, i risultati sono variabili
+
+OPZIONE A: avviare il file cape_install_force.sh
+
+controllare se le dipendenze sono state installate correttamente, in caso contrario appare un file requirement_error.txt
+
+provare anche a eseguire pip install -r ../requirements/requirements_cape.txt
+pip install -r requirements.txt 
+pip install -r /extra/optional_dependencies.txt
+
+Opzione B: installare manualmente le dipendenze
 
 
 pip install sflock django
+
+pip install requirements.txt
 
 python3 -m pip install --upgrade pip setuptools wheel poetry-core
 
@@ -89,10 +103,12 @@ pip install gevent
 
 pip install -U git+https://github.com/CAPESandbox/httpreplay
 
-            sudo groupadd pcap
-            sudo usermod -a -G pcap $USER
-            sudo chgrp pcap /usr/bin/tcpdump
-            sudo setcap cap_net_raw,cap_net_admin=eip /usr/bin/tcpdump
+setup PCAP
+
+sudo groupadd pcap
+sudo usermod -a -G pcap $USER
+sudo chgrp pcap /usr/bin/tcpdump
+sudo setcap cap_net_raw,cap_net_admin=eip /usr/bin/tcpdump
 			
 per server web
 
