@@ -258,13 +258,22 @@ Per abilitare la comunicazione tra il Proxy e l'istanza CAPE:
    python3 web/manage.py migrate
    python3 web/manage.py createsuperuser
    ```
+2. **Salvataggio Report Generati**
+   Installare MongoDB per la conservazione dei report generati
+   ```bash
+   curl -fsSL https://www.mongodb.org/static/pgp/server-7.0.asc | sudo gpg -o /usr/share/keyrings/mongodb-server-7.0.gpg --dearmor
+   sudo apt-get install -y mongodb
+   sudo systemctl start mongodb
+   sudo systemctl enable mongodb
+   ```
 
+3. **Caricamento Elementi Web**
    caricare gli elementi dell'interfaccia web
    ```bash
    python3 manage.py collectstatic --clear --noinput
    python3 manage.py compress --force
    ```
-
+4. **Creazione Token API**
    Seguire le istruzioni a schermo per creare l'admin. Il campo mail può essere lasciato vuoto.
 
 
@@ -273,7 +282,7 @@ Per abilitare la comunicazione tra il Proxy e l'istanza CAPE:
    - Andare su "Auth Tokens" -> Aggiungi token -> Selezionare l'utente creato -> Save.
    - Copiare la chiave generata (`Token ...`) e inserirla nel file `.env` o nelle variabili d'ambiente come `CAPE_APIKEY`.
 
-2. **Configurazione API VirusTotal**:
+5. **Configurazione API VirusTotal**:
    - Ottenere una API key da VirusTotal: https://www.virustotal.com/gui/join-early-access
    - Inserire la API key nel file `.env` o nelle variabili d'ambiente come `VIRUSTOTAL_APIKEY`.
 
