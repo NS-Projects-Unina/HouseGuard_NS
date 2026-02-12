@@ -203,7 +203,7 @@ Eseguire questi passaggi nell'ambiente WSL per configurare l'engine di analisi d
    ```
    controllare se la rete sia attiva e abbia come indirizzo IP 192.168.122.1
    ```bash
-   virsh net-info default
+   ip addr show virbr0
    ```
 
 3. **Dipendenze Python CAPE**:
@@ -258,6 +258,13 @@ Per abilitare la comunicazione tra il Proxy e l'istanza CAPE:
    python3 web/manage.py migrate
    python3 web/manage.py createsuperuser
    ```
+
+   caricare gli elementi dell'interfaccia web
+   ```bash
+   python3 manage.py collectstatic --clear --noinput
+   python3 manage.py compress --force
+   ```
+
    Seguire le istruzioni a schermo per creare l'admin. Il campo mail può essere lasciato vuoto.
 
 
